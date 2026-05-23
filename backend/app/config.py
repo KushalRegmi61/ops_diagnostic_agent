@@ -25,6 +25,20 @@ class Settings(BaseSettings):
     openai_compatible_base_url: str | None = None
     openai_compatible_model: str | None = None
 
+    # Redis + LangGraph checkpointer
+    redis_url: str = "redis://localhost:6379/0"
+    langgraph_checkpointer: Literal["redis"] = "redis"
+    langgraph_checkpoint_namespace: str = "ops_diagnostic"
+
+    # Langfuse
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_base_url: str = "https://us.cloud.langfuse.com"
+
+    # Run-time behavior
+    auto_approve_review: bool = False
+    per_file_iteration_cap: int = 6
+
 
 def get_settings() -> Settings:
     return Settings()
