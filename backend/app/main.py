@@ -16,8 +16,16 @@ from app.parsers import srt as _p_srt
 from app.parsers import txt as _p_txt
 from app.parsers import vtt as _p_vtt
 from app.parsers import xlsx as _p_xlsx
-from app.schemas import FileRef
+from app.models import Run
+from app.schemas import Blueprint, FileRef
 from app.services.files import get_parsed, upload_file
+from app.services.runs import (
+    FileNotFoundForRunError,
+    RunNotFoundError,
+    create_run,
+    get_blueprint,
+    start_run,
+)
 
 
 @asynccontextmanager
@@ -91,3 +99,53 @@ def post_excerpt(
     except (KeyError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     return ExcerptResponse(text=text)
+
+
+class CreateRunRequest(BaseModel):
+    file_ids: list[str]
+
+
+class RunResponse(BaseModel):
+    run_id: str
+    status: str
+    langfuse_trace_id: str | None = None
+
+
+@app.post("/api/runs", response_model=RunResponse)
+def post_run(body: CreateRunRequest, db: Session = Depends(get_db)) -> RunResponse:
+    """Create a run, link files, and invoke the diagnostic graph synchronously."""
+    if not body.file_ids:
+        raise HTTPException(status_code=400, detail="file_ids must be non-empty")
+    try:
+        run_id = create_run(db, file_ids=body.file_ids)
+    except FileNotFoundForRunError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    db.commit()
+
+    try:
+        start_run(db, run_id=run_id)
+    except RunNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    db.commit()
+
+    run = db.get(Run, run_id)
+    assert run is not None
+    return RunResponse(run_id=run_id, status=run.status, langfuse_trace_id=run.langfuse_trace_id)
+
+
+@app.get("/api/runs/{run_id}", response_model=RunResponse)
+def get_run(run_id: str, db: Session = Depends(get_db)) -> RunResponse:
+    run = db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+    return RunResponse(run_id=run_id, status=run.status, langfuse_trace_id=run.langfuse_trace_id)
+
+
+@app.get("/api/runs/{run_id}/blueprint", response_model=Blueprint)
+def get_run_blueprint(run_id: str, db: Session = Depends(get_db)) -> Blueprint:
+    if db.get(Run, run_id) is None:
+        raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+    bp = get_blueprint(db, run_id=run_id)
+    if bp is None:
+        raise HTTPException(status_code=404, detail="no blueprint for this run yet")
+    return bp
