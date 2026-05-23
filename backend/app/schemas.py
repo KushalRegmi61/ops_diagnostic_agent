@@ -100,3 +100,116 @@ class FileRef(BaseModel):
     mime_type: str
     blob_path: str
     parser_status: Literal["ok", "error", "pending"]
+
+
+# ---- Per-file agent output types ----
+
+class WorkflowRecord(BaseModel):
+    name: str
+    actors: list[str]
+    systems: list[str]
+    steps: list[str]
+    manual_touchpoints: list[str]
+    sources: list[Source]
+
+
+class PainSignal(BaseModel):
+    text: str
+    category: Literal["delay", "error", "repetition", "handoff",
+                      "missing_data", "visibility_gap", "revenue_leak"]
+    sources: list[Source]
+
+
+class LeadRow(BaseModel):
+    raw: dict
+    normalized: dict
+    source: Source
+
+
+class FileSummary(BaseModel):
+    file_id: str
+    file_name: str
+    one_paragraph_summary: str
+    key_workflows: list[WorkflowRecord]
+    key_pain_signals: list[PainSignal]
+    lead_rows: list[LeadRow]
+    open_questions: list[str]
+    agent_notes: str
+
+
+# ---- Reviewer types ----
+
+class RevisionRequest(BaseModel):
+    file_id: str
+    reason: Literal["missing_info", "contradiction", "weak_citation",
+                    "ignored_open_question", "schema_drift"]
+    detail: str
+
+
+class SummaryReview(BaseModel):
+    revision_requests: list[RevisionRequest]
+    notes: str
+
+
+# ---- Synthesis types ----
+
+class Contradiction(BaseModel):
+    topic: str
+    statements: list[dict]
+
+
+class IntakeBundle(BaseModel):
+    workflows: list[WorkflowRecord]
+    pain_signals: list[PainSignal]
+    lead_rows: list[LeadRow]
+    contradictions: list[Contradiction]
+    file_index: list[Source]
+    extraction_errors: list[ExtractionError]
+
+
+# ---- Diagnostic chain types ----
+
+class Bottleneck(BaseModel):
+    workflow_name: str
+    signal: Literal["delay", "error", "repetition", "handoff",
+                    "missing_data", "visibility_gap", "revenue_leak"]
+    impact: str
+    sources: list[Source]
+
+
+class Opportunity(BaseModel):
+    workflow_name: str
+    bottleneck_refs: list[int]
+    pain_score: int
+    roi_score: int
+    effort_score: int
+    risk_score: int
+    hours_saved_per_week: float
+    response_time_impact: str
+    rationale: str
+    sources: list[Source]
+
+
+class BlueprintClaim(BaseModel):
+    text: str
+    sources: list[Source]
+
+
+class Blueprint(BaseModel):
+    opportunity_ref: int
+    summary: BlueprintClaim
+    steps: list[BlueprintClaim]
+    required_systems: list[BlueprintClaim]
+    success_metrics: list[BlueprintClaim]
+    risks: list[BlueprintClaim]
+
+
+# ---- Self-review type ----
+
+class FinalReview(BaseModel):
+    citation_existence_ok: bool
+    citation_reachability_ok: bool
+    no_silent_drops_ok: bool
+    internal_consistency_ok: bool
+    detail: str
+    revised_once: bool
