@@ -1,16 +1,33 @@
-# Backend — Plan 1
+# Backend
 
-FastAPI backend foundation for the ops diagnostic agent: file ingestion, parsing for 10 file types with locator anchors, and an LLM provider layer over Ollama / OpenAI / Groq / OpenAI-compatible. **No mock provider** — every layer runs against a real provider end-to-end.
+FastAPI backend for the ops diagnostic agent: file ingestion, parsing for 10 file types with locator anchors, LLM providers (Ollama / OpenAI / Groq / OpenAI-compatible), multi-agent LangGraph parent workflow with Redis-backed checkpointing, and Langfuse observability. **No mock provider** — every layer runs against a real provider end-to-end.
 
 ## Quick start
 
 ```bash
 make install                            # uv venv + uv pip install -e ".[dev]"
-cp backend/.env.example backend/.env    # edit values
+cp backend/.env.example backend/.env    # edit values (Langfuse keys, etc.)
 make fixtures                           # generates parser test fixtures
-make test                               # 58 tests, 3 skip-gated on hosted keys
+make test                               # all tests; integration tests gate on services below
 make dev                                # starts uvicorn on :8000
 ```
+
+## Required services (for integration tests + runs)
+
+- **Ollama** at `OLLAMA_BASE_URL` with the configured model pulled (`llama3.2:3b` works).
+- **Redis Stack** at `REDIS_URL` — plain `redis-server` is NOT enough. The LangGraph checkpointer (`langgraph-checkpoint-redis`) requires the RedisJSON and RediSearch modules that ship with Redis Stack.
+
+  ```bash
+  # Local install (tarball, no sudo needed):
+  wget https://packages.redis.io/redis-stack/redis-stack-server-7.4.0-v3.jammy.x86_64.tar.gz
+  tar -xzf redis-stack-server-*.tar.gz
+  ./redis-stack-server-7.4.0-v3/bin/redis-stack-server --daemonize yes --port 6379
+
+  # Verify modules:
+  redis-cli MODULE LIST  # expect "search" and "ReJSON" entries
+  ```
+
+- **Langfuse** (optional but recommended): set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY`. When unset, observability hooks become no-ops.
 
 ## Test scopes
 
@@ -37,6 +54,6 @@ Set `LLM_PROVIDER` in `.env` to one of:
 
 The Ollama provider test uses `OLLAMA_MODEL` from `.env`. Any chat-capable Ollama model that supports `format=json` works (tested with `llama3.2:3b`).
 
-## What this plan does NOT include
+## What is still out of scope
 
-Agents, LangGraph parent workflow, Redis checkpointer, Langfuse observability, persistence for `file_summaries` / `intake_bundles` / `blueprints`, Next.js frontend, `make demo`. See Plan 2 (`docs/build_from_scratch_plan.md`).
+Next.js frontend, `/samples` realistic dataset, Dockerized `make demo` — all live in Plan 3 (`docs/build_from_scratch_plan.md`).

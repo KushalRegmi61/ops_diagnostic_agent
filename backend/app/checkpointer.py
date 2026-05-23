@@ -38,16 +38,9 @@ def build_checkpointer():
         raise RuntimeError("langgraph-checkpoint-redis is not installed")
 
     settings = get_settings()
-    # RedisSaver(redis_url=...) is the direct constructor form confirmed by probe.
-    # .setup() creates the required Redis indexes/schema.
+    # langgraph-checkpoint-redis requires Redis Stack (RedisJSON + RediSearch
+    # modules) — plain redis-server is not sufficient. See backend/README.md.
     saver = RedisSaver(redis_url=settings.redis_url)
     if hasattr(saver, "setup"):
-        try:
-            saver.setup()
-        except Exception:
-            # .setup() creates RediSearch indexes which require the RedisSearch
-            # module (FT._LIST). When running plain Redis without the Search
-            # module the index creation fails, but basic put/get checkpoint
-            # operations still work fine — so we swallow this error.
-            pass
+        saver.setup()
     return saver
