@@ -4,10 +4,11 @@ from pydantic import ValidationError
 from app.config import Settings
 
 
-def test_settings_loads_defaults(monkeypatch):
+def test_settings_loads_from_env(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
     monkeypatch.setenv("DATABASE_URL", "sqlite:///./test.db")
     monkeypatch.setenv("BLOB_STORE_DIR", "./test_blobs")
+    monkeypatch.setenv("OLLAMA_MODEL", "llama3.1:8b")
     s = Settings()
     assert s.llm_provider == "ollama"
     assert s.database_url == "sqlite:///./test.db"
