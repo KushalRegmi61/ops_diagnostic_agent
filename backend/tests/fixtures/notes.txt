@@ -1,0 +1,3 @@
+Discovery call summary.
+Client mentioned slow document collection.
+Producer follow-up inconsistent.

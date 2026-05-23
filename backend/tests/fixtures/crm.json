@@ -1,0 +1,16 @@
+{
+  "contacts": [
+    {
+      "id": "c1",
+      "name": "Acme Corp",
+      "last_touch_days": 12,
+      "stage": "awaiting_docs"
+    },
+    {
+      "id": "c2",
+      "name": "Beta LLC",
+      "last_touch_days": 1,
+      "stage": "new"
+    }
+  ]
+}
