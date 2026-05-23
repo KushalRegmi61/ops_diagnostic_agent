@@ -17,6 +17,7 @@ from app.checkpointer import build_checkpointer
 from app.graph import build_graph, initial_state
 from app.llm import get_provider
 from app.models import BlueprintRecord, FileRecord, FileSummaryRecord, IntakeBundleRecord, Run
+from app.observability import trace_run
 from app.parsers import parse as parse_file
 from app.schemas import Blueprint, FileRef
 
@@ -91,7 +92,10 @@ def start_run(db: Session, *, run_id: str, redo_cap: int = 1, revision_cap: int 
     )
 
     config = {"configurable": {"thread_id": run_id}}
-    final_state = graph.invoke(initial_state(run_id, refs), config=config)
+    with trace_run(run_id) as trace:
+        if trace is not None:
+            run.langfuse_trace_id = run_id
+        final_state = graph.invoke(initial_state(run_id, refs), config=config)
 
     # Persist file summaries.
     for file_id, summary in (final_state.get("file_summaries") or {}).items():

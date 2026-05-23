@@ -33,6 +33,7 @@ from app.agents.per_file import (
     transcript as a_transcript,
 )
 from app.llm.base import LLMProvider
+from app.observability import node_span
 from app.schemas import IntakeBundle, ParsedFile
 from app.state import DiagnosticState
 
@@ -66,9 +67,8 @@ def build_graph(
     ParsedFile segments are bulky and re-parsable from disk.
     """
 
-    # --- Nodes ---
+    # --- Nodes (each wrapped in a Langfuse span via node_span) ---
     def per_file_fanout(state: DiagnosticState) -> dict:
-        # If redoing, restrict to file_ids in summary_review.revision_requests.
         review = state.get("summary_review")
         if review and review.revision_requests:
             targets = {r.file_id for r in review.revision_requests}
@@ -76,21 +76,24 @@ def build_graph(
             targets = {f.file_id for f in state["files"]}
 
         out = dict(state.get("file_summaries", {}) or {})
-        for file_ref in state["files"]:
-            if file_ref.file_id not in targets:
-                continue
-            parsed = parsed_files.get(file_ref.file_id)
-            if parsed is None:
-                continue
-            agent = _PER_FILE_AGENTS.get(parsed.type)
-            if agent is None:
-                continue
-            summary = agent.run(provider=provider, parsed=parsed, on_tool_call=on_tool_call)
-            out[file_ref.file_id] = summary
+        with node_span("per_file_fanout", input={"targets": sorted(targets)}):
+            for file_ref in state["files"]:
+                if file_ref.file_id not in targets:
+                    continue
+                parsed = parsed_files.get(file_ref.file_id)
+                if parsed is None:
+                    continue
+                agent = _PER_FILE_AGENTS.get(parsed.type)
+                if agent is None:
+                    continue
+                with node_span(f"per_file:{file_ref.file_id}", input={"type": parsed.type}):
+                    summary = agent.run(provider=provider, parsed=parsed, on_tool_call=on_tool_call)
+                out[file_ref.file_id] = summary
         return {"file_summaries": out}
 
     def review_node(state: DiagnosticState) -> dict:
-        rev = review_summaries.run(provider=provider, file_summaries=state["file_summaries"])
+        with node_span("review_summaries"):
+            rev = review_summaries.run(provider=provider, file_summaries=state["file_summaries"])
         return {"summary_review": rev}
 
     def redo_router(state: DiagnosticState) -> str:
@@ -103,29 +106,34 @@ def build_graph(
         return {"redo_count": state.get("redo_count", 0) + 1}
 
     def synthesis_node(state: DiagnosticState) -> dict:
-        bundle = synthesis.run(provider=provider, file_summaries=state["file_summaries"])
+        with node_span("synthesis"):
+            bundle = synthesis.run(provider=provider, file_summaries=state["file_summaries"])
         return {"bundle": bundle}
 
     def workflow_map_node(state: DiagnosticState) -> dict:
         b = state["bundle"]
         assert isinstance(b, IntakeBundle)
-        wfs = workflow_map.run(provider=provider, bundle=b)
+        with node_span("workflow_map"):
+            wfs = workflow_map.run(provider=provider, bundle=b)
         return {"workflows": wfs}
 
     def bottleneck_detect_node(state: DiagnosticState) -> dict:
         b = state["bundle"]
         assert isinstance(b, IntakeBundle)
-        bns = bottleneck_detect.run(provider=provider, bundle=b, workflows=state["workflows"])
+        with node_span("bottleneck_detect"):
+            bns = bottleneck_detect.run(provider=provider, bundle=b, workflows=state["workflows"])
         return {"bottlenecks": bns}
 
     def roi_score_node(state: DiagnosticState) -> dict:
         b = state["bundle"]
         assert isinstance(b, IntakeBundle)
-        ops = roi_score.run(provider=provider, bundle=b, bottlenecks=state["bottlenecks"])
+        with node_span("roi_score"):
+            ops = roi_score.run(provider=provider, bundle=b, bottlenecks=state["bottlenecks"])
         return {"opportunities": ops}
 
     def fastest_win_select_node(state: DiagnosticState) -> dict:
-        sel = fastest_win_select.run(provider=provider, opportunities=state["opportunities"])
+        with node_span("fastest_win_select"):
+            sel = fastest_win_select.run(provider=provider, opportunities=state["opportunities"])
         return {"selected": sel}
 
     def solution_blueprint_node(state: DiagnosticState) -> dict:
@@ -137,10 +145,11 @@ def build_graph(
         idx = state["opportunities"].index(sel)
         fr = state.get("final_review")
         detail = fr.detail if (fr and not _final_review_ok(fr)) else None
-        bp = solution_blueprint.run(
-            provider=provider, bundle=b, selected=sel,
-            selected_index=idx, revision_detail=detail,
-        )
+        with node_span("solution_blueprint", input={"selected_index": idx, "revision": bool(detail)}):
+            bp = solution_blueprint.run(
+                provider=provider, bundle=b, selected=sel,
+                selected_index=idx, revision_detail=detail,
+            )
         return {"blueprint": bp}
 
     def self_review_node(state: DiagnosticState) -> dict:
@@ -150,13 +159,14 @@ def build_graph(
         sel = state["selected"]
         b = state["bundle"]
         assert sel is not None and isinstance(b, IntakeBundle)
-        fr = self_review_final.run(
-            provider=provider, blueprint=bp, bundle=b, selected=sel,
-            opportunities=state["opportunities"],
-            file_summaries=state["file_summaries"],
-            parsed_files=parsed_files,
-            revised_once=state.get("revision_count", 0) > 0,
-        )
+        with node_span("self_review_final"):
+            fr = self_review_final.run(
+                provider=provider, blueprint=bp, bundle=b, selected=sel,
+                opportunities=state["opportunities"],
+                file_summaries=state["file_summaries"],
+                parsed_files=parsed_files,
+                revised_once=state.get("revision_count", 0) > 0,
+            )
         return {"final_review": fr}
 
     def revise_router(state: DiagnosticState) -> str:

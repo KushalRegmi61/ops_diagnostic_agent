@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from contextvars import ContextVar
 from functools import lru_cache
 from typing import Any
 
@@ -8,6 +9,10 @@ except ImportError:  # pragma: no cover
     Langfuse = None  # type: ignore
 
 from app.config import get_settings
+
+# ContextVar set by trace_run() so nodes deep in the graph can attach spans
+# without passing the trace handle through state. None means "no Langfuse".
+current_trace: ContextVar[Any] = ContextVar("current_trace", default=None)
 
 
 @lru_cache(maxsize=1)
@@ -28,17 +33,21 @@ def langfuse_client():
 def trace_run(run_id: str, *, user_id: str | None = None):
     """Open a top-level Langfuse trace for one diagnostic run.
 
-    Yields the trace handle (or None if Langfuse is not configured).
+    Yields the trace handle (or None if Langfuse is not configured) and also
+    publishes it on the `current_trace` ContextVar so graph nodes can attach
+    nested spans without parameter-threading.
     """
     client = langfuse_client()
-    if client is None:
-        yield None
-        return
-    trace = client.trace(name="parent_graph", id=run_id, user_id=user_id)
+    trace = None
+    if client is not None:
+        trace = client.trace(name="parent_graph", id=run_id, user_id=user_id)
+    token = current_trace.set(trace)
     try:
         yield trace
     finally:
-        client.flush()
+        current_trace.reset(token)
+        if client is not None:
+            client.flush()
 
 
 @contextmanager
@@ -55,6 +64,13 @@ def span(parent: Any, name: str, *, input: dict | None = None):
         raise
     else:
         s.end()
+
+
+@contextmanager
+def node_span(name: str, *, input: dict | None = None):
+    """Convenience: open a span under the current trace (no-op if absent)."""
+    with span(current_trace.get(), name, input=input) as s:
+        yield s
 
 
 def record_generation(parent: Any, name: str, *, prompt: str, response: str, metadata: dict) -> None:
