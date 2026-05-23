@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ops_diagnostic_agent — project-specific
+backend/.venv/
+backend/blobs/
+backend/*.db
+backend/.env
