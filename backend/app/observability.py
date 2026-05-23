@@ -1,3 +1,9 @@
+"""Langfuse observability — no-op when keys are unset or the SDK errors out.
+
+The diagnostic run is the product, not the trace. Setup failures degrade to
+no-op spans; runtime exceptions inside the user code still propagate so the
+caller sees them.
+"""
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import lru_cache
@@ -10,8 +16,6 @@ except ImportError:  # pragma: no cover
 
 from app.config import get_settings
 
-# ContextVar set by trace_run() so nodes deep in the graph can attach spans
-# without passing the trace handle through state. None means "no Langfuse".
 current_trace: ContextVar[Any] = ContextVar("current_trace", default=None)
 
 
@@ -22,66 +26,71 @@ def langfuse_client():
         return None
     if Langfuse is None:
         return None
-    return Langfuse(
-        public_key=s.langfuse_public_key,
-        secret_key=s.langfuse_secret_key,
-        host=s.langfuse_base_url,
-    )
+    try:
+        return Langfuse(
+            public_key=s.langfuse_public_key,
+            secret_key=s.langfuse_secret_key,
+            host=s.langfuse_base_url,
+        )
+    except Exception:
+        return None
 
 
 @contextmanager
 def trace_run(run_id: str, *, user_id: str | None = None):
-    """Open a top-level Langfuse trace for one diagnostic run.
+    """Open the top-level Langfuse span for a diagnostic run.
 
-    Yields the trace handle (or None if Langfuse is not configured) and also
-    publishes it on the `current_trace` ContextVar so graph nodes can attach
-    nested spans without parameter-threading.
+    Uses the v3 OpenTelemetry-style `start_as_current_observation` API.
+    Falls back to a no-op context when Langfuse is unavailable.
     """
     client = langfuse_client()
-    trace = None
-    if client is not None:
-        trace = client.trace(name="parent_graph", id=run_id, user_id=user_id)
-    token = current_trace.set(trace)
-    try:
-        yield trace
-    finally:
-        current_trace.reset(token)
-        if client is not None:
-            client.flush()
-
-
-@contextmanager
-def span(parent: Any, name: str, *, input: dict | None = None):
-    """Open a nested span under `parent`. Closes with output/error on exit."""
-    if parent is None:
-        yield None
+    if client is None:
+        token = current_trace.set(None)
+        try:
+            yield None
+        finally:
+            current_trace.reset(token)
         return
-    s = parent.span(name=name, input=input or {})
+
     try:
-        yield s
-    except Exception as e:
-        s.end(level="ERROR", status_message=str(e))
-        raise
-    else:
-        s.end()
+        cm = client.start_as_current_observation(
+            as_type="span", name="parent_graph",
+            input={"run_id": run_id, "user_id": user_id},
+        )
+    except Exception:
+        token = current_trace.set(None)
+        try:
+            yield None
+        finally:
+            current_trace.reset(token)
+        return
+
+    with cm as root:
+        token = current_trace.set(root)
+        try:
+            yield root
+        finally:
+            current_trace.reset(token)
+            try:
+                client.flush()
+            except Exception:
+                pass
 
 
 @contextmanager
 def node_span(name: str, *, input: dict | None = None):
-    """Convenience: open a span under the current trace (no-op if absent)."""
-    with span(current_trace.get(), name, input=input) as s:
-        yield s
-
-
-def record_generation(parent: Any, name: str, *, prompt: str, response: str, metadata: dict) -> None:
-    """Attach an LLM generation event to `parent`."""
-    if parent is None:
+    """Open a nested span under the current trace (no-op if absent)."""
+    client = langfuse_client()
+    parent = current_trace.get()
+    if client is None or parent is None:
+        yield None
         return
-    parent.generation(
-        name=name,
-        input=prompt,
-        output=response,
-        model=metadata.get("model"),
-        usage={"input": metadata.get("token_estimate", 0)},
-        metadata=metadata,
-    )
+    try:
+        cm = client.start_as_current_observation(
+            as_type="span", name=name, input=input or {},
+        )
+    except Exception:
+        yield None
+        return
+    with cm as s:
+        yield s

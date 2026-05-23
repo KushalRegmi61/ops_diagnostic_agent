@@ -13,6 +13,7 @@ from typing import Callable
 
 from langgraph.graph import END, StateGraph
 
+from app import _langgraph_pydantic_patch  # noqa: F401  (teach Redis serializer about Pydantic)
 from app.agents.lead import (
     bottleneck_detect,
     fastest_win_select,
