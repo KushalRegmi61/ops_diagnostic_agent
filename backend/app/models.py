@@ -29,3 +29,27 @@ class FileRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     run: Mapped[Run | None] = relationship(back_populates="files")
+
+
+class FileSummaryRecord(Base):
+    __tablename__ = "file_summaries"
+
+    file_id: Mapped[str] = mapped_column(ForeignKey("files.id"), primary_key=True)
+    payload_json: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class IntakeBundleRecord(Base):
+    __tablename__ = "intake_bundles"
+
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), primary_key=True)
+    payload_json: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class BlueprintRecord(Base):
+    __tablename__ = "blueprints"
+
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), primary_key=True)
+    payload_json: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
