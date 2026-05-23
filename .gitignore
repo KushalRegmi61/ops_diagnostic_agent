@@ -222,3 +222,4 @@ backend/.venv/
 backend/blobs/
 backend/*.db
 backend/.env
+graphify-out/
