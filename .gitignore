@@ -223,3 +223,4 @@ backend/blobs/
 backend/*.db
 backend/.env
 graphify-out/
+backend/*.egg-info/
