@@ -1,3 +1,4 @@
+"""synthesis lead node against real Ollama: file summaries -> IntakeBundle."""
 import httpx
 import pytest
 
@@ -8,6 +9,7 @@ from app.schemas import FileSummary, PainSignal, Source
 
 
 def _ollama_up(base_url):
+    """Return True if Ollama responds to GET /api/tags within 2 seconds."""
     try:
         return httpx.get(f"{base_url}/api/tags", timeout=2.0).status_code == 200
     except Exception:
@@ -21,6 +23,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_synthesis_returns_valid_intake_bundle():
+    """synthesis.run returns a structurally valid IntakeBundle with list slots."""
     src = Source(file_id="f1", file_name="x.md", type="md",
                  locator={"type": "text", "line_start": 1, "line_end": 1})
     fs = FileSummary(

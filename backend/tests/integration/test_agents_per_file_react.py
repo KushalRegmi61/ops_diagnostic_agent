@@ -1,3 +1,4 @@
+"""ReAct loop integration: drive run_react_loop against real Ollama + md parser."""
 import httpx
 import pytest
 from pathlib import Path
@@ -9,6 +10,7 @@ from app.parsers import md as md_parser
 
 
 def _ollama_up(base_url: str) -> bool:
+    """Return True if Ollama responds to GET /api/tags within 2 seconds."""
     try:
         return httpx.get(f"{base_url}/api/tags", timeout=2.0).status_code == 200
     except Exception:
@@ -23,6 +25,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_react_loop_produces_file_summary_from_markdown():
+    """run_react_loop drives the agent end-to-end and every emitted Source round-trips."""
     fixture = Path(__file__).parent.parent / "fixtures" / "notes.md"
     parsed = md_parser.parse(file_id="f1", file_name="notes.md", path=fixture)
     get_provider.cache_clear()

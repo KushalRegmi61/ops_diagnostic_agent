@@ -1,3 +1,7 @@
+"""JSON parser. Flattens an arbitrary document into one ParsedSegment per leaf
+value, keyed by an RFC 6901 JSON Pointer. The pointer is the locator, so
+excerpts round-trip via exact-pointer match.
+"""
 import json as _json
 from pathlib import Path
 
@@ -20,6 +24,7 @@ def _flatten(obj, prefix: str = "") -> list[tuple[str, str]]:
 
 
 def parse(*, file_id: str, file_name: str, path: Path) -> ParsedFile:
+    """Load the JSON at ``path`` and emit one ``json``-locator segment per leaf value."""
     data = _json.loads(path.read_text())
     pairs = _flatten(data)
     segments = [
@@ -30,6 +35,7 @@ def parse(*, file_id: str, file_name: str, path: Path) -> ParsedFile:
 
 
 def excerpt(parsed: ParsedFile, locator: dict) -> str:
+    """Return the leaf value text whose JSON pointer matches ``locator['pointer']``."""
     ptr = locator["pointer"]
     for seg in parsed.segments:
         if seg.locator["pointer"] == ptr:

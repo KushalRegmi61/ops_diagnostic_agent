@@ -1,3 +1,4 @@
+"""DOCX parser: per-paragraph segmentation and excerpt round-trip."""
 from pathlib import Path
 
 from app.parsers.docx import excerpt, parse
@@ -6,6 +7,7 @@ FIXTURE = Path(__file__).parent.parent / "fixtures" / "sop.docx"
 
 
 def test_parse_docx_emits_segments_per_paragraph():
+    """parse() emits one segment per paragraph keyed by paragraph_index."""
     pf = parse(file_id="f1", file_name="sop.docx", path=FIXTURE)
     assert pf.type == "docx"
     assert len(pf.segments) == 3
@@ -14,6 +16,7 @@ def test_parse_docx_emits_segments_per_paragraph():
 
 
 def test_excerpt_returns_paragraph_slice():
+    """excerpt() returns the requested span_start..span_end slice of a paragraph."""
     pf = parse(file_id="f1", file_name="sop.docx", path=FIXTURE)
     seg = pf.segments[1]
     text = excerpt(pf, {

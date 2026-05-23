@@ -19,6 +19,7 @@ from app.schemas import (
 
 
 def _ollama_up(base_url: str) -> bool:
+    """Return True if Ollama responds to GET /api/tags within 2 seconds."""
     try:
         return httpx.get(f"{base_url}/api/tags", timeout=2.0).status_code == 200
     except Exception:
@@ -32,6 +33,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_self_review_emits_final_review(tmp_path: Path):
+    """self_review.run passes deterministic existence + reachability gates and emits booleans."""
     p = tmp_path / "lead_intake.md"
     p.write_text("# Lead intake\n\nCSRs copy emails into HubSpot manually.\n")
     parsed = md_parse(file_id="f1", file_name="lead_intake.md", path=p)

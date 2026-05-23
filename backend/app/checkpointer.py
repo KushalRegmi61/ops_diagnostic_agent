@@ -1,3 +1,11 @@
+"""Redis-backed LangGraph checkpointer wiring.
+
+Wraps `langgraph-checkpoint-redis` to persist every graph step under a
+thread_id (= run_id), so the parent workflow can resume across the bounded
+redo/revision loops. Requires Redis Stack (RedisJSON + RediSearch) — plain
+redis-server will fail with `unknown command 'JSON.SET'`. No in-memory
+fallback by design.
+"""
 import redis as redis_lib
 
 try:
@@ -40,7 +48,13 @@ def build_checkpointer():
     settings = get_settings()
     # langgraph-checkpoint-redis requires Redis Stack (RedisJSON + RediSearch
     # modules) — plain redis-server is not sufficient. See backend/README.md.
-    saver = RedisSaver(redis_url=settings.redis_url)
+    ttl_config: dict | None = None
+    if settings.langgraph_checkpoint_ttl_minutes is not None:
+        ttl_config = {
+            "default_ttl": settings.langgraph_checkpoint_ttl_minutes,
+            "refresh_on_read": settings.langgraph_checkpoint_refresh_on_read,
+        }
+    saver = RedisSaver(redis_url=settings.redis_url, ttl=ttl_config)
     if hasattr(saver, "setup"):
         saver.setup()
     return saver

@@ -1,3 +1,7 @@
+"""OpenAICompatProvider smoke test against an OpenAI-compatible endpoint.
+
+Skipped unless OPENAI_COMPATIBLE_API_KEY, _BASE_URL, and _MODEL are all set.
+"""
 import os
 
 import pytest
@@ -20,6 +24,7 @@ class EchoSchema(BaseModel):
     reason="OPENAI_COMPATIBLE_* env vars not all set",
 )
 def test_openai_compat_generate_json_returns_schema_valid_object():
+    """OpenAI-compatible generate_json returns a schema-valid object."""
     provider = OpenAICompatProvider(api_key=API_KEY, base_url=BASE_URL, model=MODEL)
     prompt = "Reply with JSON: {\"sentiment\": \"positive\", \"confidence\": 0.9}."
     result, meta = provider.generate_json(prompt_name="echo", prompt=prompt, schema=EchoSchema)

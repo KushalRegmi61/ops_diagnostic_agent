@@ -1,3 +1,12 @@
+"""Prompt for the ``solution_blueprint`` lead node.
+
+Writes the final automation Blueprint for the selected opportunity. Includes a
+fully-fleshed worked example to counter llama3.2:3b's tendency to emit bare
+``"sources": ["f1"]`` strings instead of structured Source objects — every
+claim (summary, steps, required_systems, success_metrics, risks) must carry
+list[Source] with file_id/file_name/type/locator.
+"""
+
 PROMPT = """You are the blueprint writer. Produce a Blueprint for the selected opportunity.
 
 CRITICAL: Every claim object (summary, and each item in steps, required_systems,

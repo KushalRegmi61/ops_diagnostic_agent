@@ -1,7 +1,9 @@
+"""GenerateMetadata dataclass field checks for the LLM provider Protocol."""
 from app.llm.base import GenerateMetadata
 
 
 def test_generate_metadata_fields():
+    """GenerateMetadata stores provider/model/prompt diagnostics verbatim."""
     m = GenerateMetadata(
         provider="ollama",
         model="llama3.1:8b",

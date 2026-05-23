@@ -1,3 +1,9 @@
+"""Prompt for the ``synthesis`` lead node.
+
+Reconciles per-file FileSummary objects into a single IntakeBundle, preserving
+contradictions explicitly rather than silently merging conflicting facts.
+"""
+
 PROMPT = """You are the synthesizer. Reconcile per-file FileSummary objects into one IntakeBundle.
 
 Rules:

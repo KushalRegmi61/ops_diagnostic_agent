@@ -1,3 +1,11 @@
+"""ReAct loop shared by every per-file agent.
+
+Drives the think -> act -> observe cycle: each iteration the provider is asked
+for a single ``{tool, args}`` JSON object, the dispatcher in ``_router.py``
+runs the tool, and the result is folded into the WorkingState. The loop ends
+either when the model calls ``finalize_summary`` (returning a FileSummary) or
+when ``iteration_cap`` is reached (a partial FileSummary with a caveat).
+"""
 import json
 from typing import Any
 
@@ -17,6 +25,7 @@ class _ToolReply(BaseModel):
 
 
 def _state_recap(ws: WorkingState) -> str:
+    """Render a one-line snapshot of the WorkingState counters for the next prompt."""
     parts = [
         f"iter={ws.iteration}",
         f"workflows={len(ws.workflows)}",

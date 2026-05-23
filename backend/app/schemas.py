@@ -1,9 +1,21 @@
+"""Typed boundaries — the contract every layer of the pipeline obeys.
+
+Defines the 8-member Source locator discriminated union, per-file agent
+outputs (FileSummary and its parts), reviewer outputs, the synthesized
+IntakeBundle, the diagnostic chain outputs (Bottleneck/Opportunity/
+Blueprint), and the FinalReview emitted by self_review_final. The
+citation invariant — every Source must round-trip through
+`app.parsers.excerpt(parsed, locator)` to non-empty text — is enforced
+against these schemas.
+"""
 from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field
 
 
 class PdfLocator(BaseModel):
+    """Locator into a parsed PDF: page index plus character span."""
+
     type: Literal["pdf"] = "pdf"
     page: int
     span_start: int
@@ -11,6 +23,8 @@ class PdfLocator(BaseModel):
 
 
 class DocxLocator(BaseModel):
+    """Locator into a parsed DOCX: paragraph index plus character span."""
+
     type: Literal["docx"] = "docx"
     paragraph_index: int
     span_start: int
@@ -18,12 +32,16 @@ class DocxLocator(BaseModel):
 
 
 class TextLocator(BaseModel):
+    """Locator into plain-text / markdown content: inclusive line range."""
+
     type: Literal["text"] = "text"
     line_start: int
     line_end: int
 
 
 class TranscriptLocator(BaseModel):
+    """Locator into a VTT/SRT transcript: line range plus timestamps."""
+
     type: Literal["transcript"] = "transcript"
     line_start: int
     line_end: int
@@ -32,23 +50,31 @@ class TranscriptLocator(BaseModel):
 
 
 class TableLocator(BaseModel):
+    """Locator into a CSV table: zero-indexed row."""
+
     type: Literal["table"] = "table"
     row_index: int
 
 
 class XlsxLocator(BaseModel):
+    """Locator into an XLSX workbook: sheet name plus row index."""
+
     type: Literal["xlsx"] = "xlsx"
     sheet: str
     row_index: int
 
 
 class MboxLocator(BaseModel):
+    """Locator into an MBOX archive: message id plus header/body section."""
+
     type: Literal["mbox"] = "mbox"
     message_id: str
     section: Literal["header", "body"] = "body"
 
 
 class JsonLocator(BaseModel):
+    """Locator into a JSON document via RFC 6901 JSON Pointer."""
+
     type: Literal["json"] = "json"
     pointer: str  # RFC 6901
 
@@ -70,6 +96,8 @@ FileType = Literal[
 
 
 class Source(BaseModel):
+    """A citation: file identity plus an opaque locator dict matching one of the locator types."""
+
     file_id: str
     file_name: str
     type: FileType
@@ -77,11 +105,15 @@ class Source(BaseModel):
 
 
 class ParsedSegment(BaseModel):
+    """One addressable unit of parsed content — text plus the locator that points back to it."""
+
     text: str
     locator: dict
 
 
 class ParsedFile(BaseModel):
+    """A fully parsed file: identity, type, and the ordered list of ParsedSegments."""
+
     file_id: str
     file_name: str
     type: FileType
@@ -89,12 +121,16 @@ class ParsedFile(BaseModel):
 
 
 class ExtractionError(BaseModel):
+    """A structured failure surfaced from parsing, per-file agent run, or review."""
+
     file_id: str
     stage: Literal["parse", "agent", "review"]
     message: str
 
 
 class FileRef(BaseModel):
+    """Lightweight reference to an uploaded file, returned by the upload endpoint."""
+
     file_id: str
     file_name: str
     mime_type: str
@@ -105,6 +141,8 @@ class FileRef(BaseModel):
 # ---- Per-file agent output types ----
 
 class WorkflowRecord(BaseModel):
+    """A workflow extracted from a file: name, actors, systems, steps, manual touchpoints, citations."""
+
     name: str
     actors: list[str]
     systems: list[str]
@@ -114,6 +152,8 @@ class WorkflowRecord(BaseModel):
 
 
 class PainSignal(BaseModel):
+    """An operational pain point with category and supporting citations."""
+
     text: str
     category: Literal["delay", "error", "repetition", "handoff",
                       "missing_data", "visibility_gap", "revenue_leak"]
@@ -121,12 +161,16 @@ class PainSignal(BaseModel):
 
 
 class LeadRow(BaseModel):
+    """A normalized lead row (e.g. from a CSV) with its raw form and source citation."""
+
     raw: dict
     normalized: dict
     source: Source
 
 
 class FileSummary(BaseModel):
+    """Per-file agent output: prose summary, workflows, pain signals, lead rows, open questions."""
+
     file_id: str
     file_name: str
     one_paragraph_summary: str
@@ -140,6 +184,8 @@ class FileSummary(BaseModel):
 # ---- Reviewer types ----
 
 class RevisionRequest(BaseModel):
+    """A reviewer's request to re-run a specific file with a categorized reason."""
+
     file_id: str
     reason: Literal["missing_info", "contradiction", "weak_citation",
                     "ignored_open_question", "schema_drift"]
@@ -147,6 +193,8 @@ class RevisionRequest(BaseModel):
 
 
 class SummaryReview(BaseModel):
+    """review_summaries output — set of revision requests plus free-form notes."""
+
     revision_requests: list[RevisionRequest]
     notes: str
 
@@ -154,11 +202,15 @@ class SummaryReview(BaseModel):
 # ---- Synthesis types ----
 
 class Contradiction(BaseModel):
+    """A cross-file contradiction: topic plus the conflicting statements."""
+
     topic: str
     statements: list[dict]
 
 
 class IntakeBundle(BaseModel):
+    """Cross-file synthesis — merged workflows, pain signals, leads, contradictions, file index."""
+
     workflows: list[WorkflowRecord]
     pain_signals: list[PainSignal]
     lead_rows: list[LeadRow]
@@ -170,6 +222,8 @@ class IntakeBundle(BaseModel):
 # ---- Diagnostic chain types ----
 
 class Bottleneck(BaseModel):
+    """A detected bottleneck inside a workflow with its signal category and impact."""
+
     workflow_name: str
     signal: Literal["delay", "error", "repetition", "handoff",
                     "missing_data", "visibility_gap", "revenue_leak"]
@@ -178,6 +232,8 @@ class Bottleneck(BaseModel):
 
 
 class Opportunity(BaseModel):
+    """A scored automation opportunity: pain/ROI/effort/risk plus quantified savings."""
+
     workflow_name: str
     bottleneck_refs: list[int]
     pain_score: int
@@ -191,11 +247,15 @@ class Opportunity(BaseModel):
 
 
 class BlueprintClaim(BaseModel):
+    """A single claim inside the Blueprint, always carrying its supporting Sources."""
+
     text: str
     sources: list[Source]
 
 
 class Blueprint(BaseModel):
+    """The final automation blueprint for the selected fastest-win opportunity."""
+
     opportunity_ref: int
     summary: BlueprintClaim
     steps: list[BlueprintClaim]
@@ -207,6 +267,8 @@ class Blueprint(BaseModel):
 # ---- Self-review type ----
 
 class FinalReview(BaseModel):
+    """self_review_final output: existence/reachability/consistency gates plus detail."""
+
     citation_existence_ok: bool
     citation_reachability_ok: bool
     no_silent_drops_ok: bool

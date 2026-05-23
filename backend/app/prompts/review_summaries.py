@@ -1,3 +1,10 @@
+"""Prompt for the ``review_summaries`` lead node.
+
+The reviewer reads every per-file FileSummary and emits a SummaryReview with at
+most one revision_request per file, which the graph uses to drive the bounded
+per-file redo loop (max one pass).
+"""
+
 PROMPT = """You are the reviewer agent. You read every per-file FileSummary and decide whether any per-file agent should redo its work.
 
 Emit a SummaryReview with revision_requests. Use these reasons:

@@ -1,3 +1,7 @@
+"""XLSX parser. Walks every sheet; emits one ParsedSegment per data row rendered
+as ``header=value | header=value``. Locators carry both ``sheet`` and
+``row_index`` so excerpt() can disambiguate rows across sheets.
+"""
 from pathlib import Path
 
 import openpyxl
@@ -6,6 +10,7 @@ from app.schemas import ParsedFile, ParsedSegment
 
 
 def parse(*, file_id: str, file_name: str, path: Path) -> ParsedFile:
+    """Open the workbook read-only, iterate every sheet, and emit one segment per data row."""
     wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
     segments: list[ParsedSegment] = []
     for sheet_name in wb.sheetnames:
@@ -26,6 +31,7 @@ def parse(*, file_id: str, file_name: str, path: Path) -> ParsedFile:
 
 
 def excerpt(parsed: ParsedFile, locator: dict) -> str:
+    """Return the rendered row matching both ``sheet`` and ``row_index`` in the locator."""
     sheet = locator["sheet"]
     idx = locator["row_index"]
     for seg in parsed.segments:

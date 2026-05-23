@@ -1,3 +1,4 @@
+"""PDF parser: per-page segmentation and excerpt round-trip."""
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ FIXTURE = Path(__file__).parent.parent / "fixtures" / "sop.pdf"
 
 
 def test_parse_pdf_emits_segments_per_page():
+    """parse() emits at least one segment per page with page-anchored locators."""
     pf = parse(file_id="f1", file_name="sop.pdf", path=FIXTURE)
     assert pf.type == "pdf"
     assert len(pf.segments) >= 2
@@ -18,6 +20,7 @@ def test_parse_pdf_emits_segments_per_page():
 
 
 def test_excerpt_returns_text_at_locator():
+    """excerpt() returns the slice of text addressed by a valid PdfLocator."""
     pf = parse(file_id="f1", file_name="sop.pdf", path=FIXTURE)
     seg = pf.segments[0]
     loc = PdfLocator(page=1, span_start=0, span_end=len(seg.text))
@@ -26,6 +29,7 @@ def test_excerpt_returns_text_at_locator():
 
 
 def test_excerpt_invalid_page_raises():
+    """excerpt() raises ValueError for an out-of-range page."""
     pf = parse(file_id="f1", file_name="sop.pdf", path=FIXTURE)
     with pytest.raises(ValueError):
         excerpt(pf, {"type": "pdf", "page": 999, "span_start": 0, "span_end": 5})

@@ -25,12 +25,14 @@ from app.schemas import (
 
 
 class _Judgment(BaseModel):
+    """LLM-only portion of the final review (deterministic checks happen in code)."""
     no_silent_drops_ok: bool
     internal_consistency_ok: bool
     detail: str
 
 
 def _all_sources(bp: Blueprint) -> list[Source]:
+    """Flatten every Source across the Blueprint's summary, steps, systems, metrics, and risks."""
     out: list[Source] = []
     for claim in [bp.summary, *bp.steps, *bp.required_systems, *bp.success_metrics, *bp.risks]:
         out.extend(claim.sources)
@@ -38,6 +40,7 @@ def _all_sources(bp: Blueprint) -> list[Source]:
 
 
 def _check_existence(sources: list[Source], file_index_ids: set[str]) -> tuple[bool, list[str]]:
+    """Verify every Source.file_id is known to the IntakeBundle.file_index; return (ok, bad_ids)."""
     bad = [s.file_id for s in sources if s.file_id not in file_index_ids]
     return (not bad), bad
 
@@ -45,6 +48,7 @@ def _check_existence(sources: list[Source], file_index_ids: set[str]) -> tuple[b
 def _check_reachability(
     sources: list[Source], parsed_files: dict[str, ParsedFile]
 ) -> tuple[bool, list[tuple[str, str]]]:
+    """Round-trip each Source.locator through parser.excerpt; return (ok, list of (file_id, reason))."""
     bad: list[tuple[str, str]] = []
     for s in sources:
         parsed = parsed_files.get(s.file_id)
@@ -71,6 +75,7 @@ def run(
     parsed_files: dict[str, ParsedFile],
     revised_once: bool,
 ) -> FinalReview:
+    """Run deterministic citation checks and an LLM judgment; merged detail drives the revise_inc branch."""
     file_index_ids = {s.file_id for s in bundle.file_index}
     sources = _all_sources(blueprint)
 

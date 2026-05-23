@@ -1,3 +1,9 @@
+"""Typed tool dispatcher for the per-file ReAct loop.
+
+Parses the LLM's ``{tool, args}`` reply into a ToolCall and routes it to the
+matching function under ``_tools/``. Unknown tool names raise so the loop can
+log the failure and continue rather than silently dropping the call.
+"""
 from typing import Any
 
 from pydantic import BaseModel
@@ -14,11 +20,13 @@ from app.schemas import ParsedFile
 
 
 class ToolCall(BaseModel):
+    """Parsed tool invocation from a single ReAct iteration."""
     tool: str
     args: dict
 
 
 def dispatch(call: ToolCall, *, parsed: ParsedFile, ws: WorkingState) -> Any:
+    """Route ``call`` to its tool implementation; raises ValueError on unknown tool names."""
     name = call.tool
     args = call.args
 

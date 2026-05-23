@@ -1,3 +1,11 @@
+"""LLM provider factory.
+
+Resolves the configured provider (ollama / openai / groq / openai_compatible)
+from settings and returns a cached LLMProvider instance. Every lead node and
+ReAct tool routes through the value returned here, so swapping providers is a
+one-env-var change. Tests that mutate ``.env`` mid-suite must call
+``get_provider.cache_clear()``.
+"""
 from functools import lru_cache
 
 from app.config import get_settings
@@ -6,6 +14,7 @@ from app.llm.base import GenerateMetadata, LLMProvider
 
 @lru_cache(maxsize=1)
 def get_provider() -> LLMProvider:
+    """Build the configured LLMProvider once and cache it for the process lifetime."""
     settings = get_settings()
     if settings.llm_provider == "ollama":
         from app.llm.ollama import OllamaProvider

@@ -1,3 +1,11 @@
+"""SQLAlchemy ORM models for the diagnostic agent's persistence layer.
+
+Five tables back the pipeline outputs: `runs`, `files`, `file_summaries`,
+`intake_bundles`, and `blueprints`. Large agent payloads (FileSummary,
+IntakeBundle, Blueprint) are serialized to JSON strings in `payload_json`
+columns rather than normalized — they are append-only artifacts keyed by
+run_id or file_id.
+"""
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String
@@ -7,6 +15,8 @@ from app.database import Base
 
 
 class Run(Base):
+    """A single diagnostic run — its status, creation time, and optional Langfuse trace id."""
+
     __tablename__ = "runs"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -18,6 +28,8 @@ class Run(Base):
 
 
 class FileRecord(Base):
+    """An uploaded file: name, mime, blob path on disk, parser status, and optional run linkage."""
+
     __tablename__ = "files"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -32,6 +44,8 @@ class FileRecord(Base):
 
 
 class FileSummaryRecord(Base):
+    """Persisted per-file agent output (FileSummary) stored as JSON keyed by file_id."""
+
     __tablename__ = "file_summaries"
 
     file_id: Mapped[str] = mapped_column(ForeignKey("files.id"), primary_key=True)
@@ -40,6 +54,8 @@ class FileSummaryRecord(Base):
 
 
 class IntakeBundleRecord(Base):
+    """Persisted synthesis output (IntakeBundle) stored as JSON keyed by run_id."""
+
     __tablename__ = "intake_bundles"
 
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), primary_key=True)
@@ -48,6 +64,8 @@ class IntakeBundleRecord(Base):
 
 
 class BlueprintRecord(Base):
+    """Persisted final automation Blueprint stored as JSON keyed by run_id."""
+
     __tablename__ = "blueprints"
 
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), primary_key=True)

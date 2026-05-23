@@ -1,3 +1,9 @@
+"""Local Ollama provider — the default for development.
+
+Talks to ``/api/chat`` with ``format=json`` and one parse-and-validate retry on
+malformed output. Default timeout is 300s because cold loads of llama3.2:3b can
+take 30-120s after a daemon restart or model swap.
+"""
 import json
 import time
 from typing import Type
@@ -9,9 +15,12 @@ from app.llm.base import GenerateMetadata
 
 
 class OllamaProvider:
+    """LLMProvider implementation backed by a local Ollama server."""
+
     name = "ollama"
 
     def __init__(self, *, base_url: str, model: str, timeout_s: float = 300.0) -> None:
+        """Store base URL, model tag, and HTTP timeout (300s default for cold model loads)."""
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout_s = timeout_s
@@ -27,6 +36,7 @@ class OllamaProvider:
         top_p: float | None = None,
         seed: int | None = None,
     ) -> tuple[dict, GenerateMetadata]:
+        """Call Ollama in JSON mode, retry once on parse/validation failure, return (parsed, meta)."""
         options: dict = {"temperature": temperature}
         if max_tokens is not None:
             options["num_predict"] = max_tokens

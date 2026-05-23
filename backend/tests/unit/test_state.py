@@ -1,7 +1,9 @@
+"""DiagnosticState TypedDict shape and minimal construction."""
 from app.state import DiagnosticState
 
 
 def test_diagnostic_state_typed_dict_keys():
+    """DiagnosticState declares every key required by the parent graph."""
     expected_keys = {
         "run_id", "files", "file_summaries", "summary_review", "redo_count",
         "bundle", "workflows", "bottlenecks", "opportunities", "selected",
@@ -11,6 +13,7 @@ def test_diagnostic_state_typed_dict_keys():
 
 
 def test_diagnostic_state_construct_minimal():
+    """A minimal DiagnosticState literal type-checks and round-trips values."""
     state: DiagnosticState = {
         "run_id": "r1", "files": [], "file_summaries": {}, "summary_review": None,
         "redo_count": 0, "bundle": None, "workflows": [], "bottlenecks": [],

@@ -1,3 +1,6 @@
+"""Groq provider. Thin wrapper over OpenAIProvider pointed at the Groq API,
+rewriting the reported provider name on the returned metadata.
+"""
 from typing import Type
 
 from pydantic import BaseModel
@@ -7,9 +10,12 @@ from app.llm.openai import OpenAIProvider
 
 
 class GroqProvider:
+    """LLMProvider that delegates to OpenAIProvider against the Groq endpoint."""
+
     name = "groq"
 
     def __init__(self, *, api_key: str, base_url: str, model: str) -> None:
+        """Wrap an OpenAIProvider configured for the Groq base URL."""
         self._inner = OpenAIProvider(api_key=api_key, model=model, base_url=base_url)
         self.model = model
 
@@ -24,6 +30,7 @@ class GroqProvider:
         top_p: float | None = None,
         seed: int | None = None,
     ) -> tuple[dict, GenerateMetadata]:
+        """Delegate to the wrapped OpenAIProvider, then overwrite ``meta.provider`` to ``groq``."""
         result, meta = self._inner.generate_json(
             prompt_name=prompt_name,
             prompt=prompt,

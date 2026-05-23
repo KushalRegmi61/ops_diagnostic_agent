@@ -1,3 +1,9 @@
+"""cite_locator tool: enforce the citation round-trip invariant per Source.
+
+A locator is only valid if the matching parser's ``excerpt()`` returns
+non-empty text for it. This tool is what keeps fabricated locators out of
+the FileSummary before the lead's ``self_review_final`` ever runs.
+"""
 from app.parsers import csv as _p_csv
 from app.parsers import docx as _p_docx
 from app.parsers import json as _p_json

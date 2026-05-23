@@ -17,6 +17,7 @@ from app.services.runs import (
 
 @pytest.fixture
 def db():
+    """Yield a session bound to a fresh in-memory SQLite schema."""
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     SessionLocal = sessionmaker(bind=engine)
@@ -26,6 +27,7 @@ def db():
 
 
 def _add_file(db, fid: str) -> None:
+    """Insert a parsed-ok FileRecord with the given file_id."""
     db.add(FileRecord(
         id=fid, run_id=None, file_name=f"{fid}.md",
         mime_type="text/markdown", blob_path=f"/tmp/{fid}",
@@ -35,6 +37,7 @@ def _add_file(db, fid: str) -> None:
 
 
 def test_create_run_links_files(db):
+    """create_run assigns the new run_id to every referenced FileRecord."""
     _add_file(db, "f1")
     _add_file(db, "f2")
     run_id = create_run(db, file_ids=["f1", "f2"])
@@ -44,15 +47,18 @@ def test_create_run_links_files(db):
 
 
 def test_create_run_rejects_unknown_file(db):
+    """create_run raises FileNotFoundForRunError if any file_id is missing."""
     with pytest.raises(FileNotFoundForRunError):
         create_run(db, file_ids=["f_ghost"])
 
 
 def test_get_blueprint_returns_none_when_missing(db):
+    """get_blueprint returns None when no BlueprintRecord matches the run."""
     assert get_blueprint(db, run_id="r_nope") is None
 
 
 def test_get_blueprint_round_trips(db):
+    """Persisted Blueprint JSON round-trips back into a Pydantic Blueprint model."""
     src = Source(file_id="f1", file_name="x.md", type="md",
                  locator={"type": "text", "line_start": 1, "line_end": 1})
     claim = BlueprintClaim(text="t", sources=[src])

@@ -1,3 +1,8 @@
+"""OllamaProvider.generate_json against a real local Ollama daemon.
+
+Touches the configured Ollama base_url + model. Skipped when /api/tags is not
+reachable. Cold-start loads of llama3.2:3b can take 30-120s.
+"""
 import httpx
 import pytest
 from pydantic import BaseModel
@@ -7,6 +12,7 @@ from app.llm.ollama import OllamaProvider
 
 
 def _ollama_up(base_url: str) -> bool:
+    """Return True if Ollama responds to GET /api/tags within 2 seconds."""
     try:
         r = httpx.get(f"{base_url}/api/tags", timeout=2.0)
         return r.status_code == 200
@@ -26,6 +32,7 @@ class EchoSchema(BaseModel):
 
 @pytest.mark.skipif(not _ollama_up(BASE_URL), reason="Ollama not reachable")
 def test_ollama_generate_json_returns_schema_valid_object():
+    """generate_json returns a schema-valid object plus populated GenerateMetadata."""
     provider = OllamaProvider(base_url=BASE_URL, model=MODEL)
     prompt = (
         "Classify the sentiment of: 'This product is great!'.\n"

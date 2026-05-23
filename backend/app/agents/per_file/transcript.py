@@ -1,4 +1,8 @@
-"""Per-file agent for meeting transcripts (VTT and SRT)."""
+"""Per-file ReAct agent for meeting transcripts (VTT and SRT).
+
+Uses a transcript-specific prompt suffix carrying timestamp-bearing locators
+so cited excerpts can be linked back to a moment in the recording.
+"""
 from app.agents.per_file._react_loop import run_react_loop
 from app.config import get_settings
 from app.llm.base import LLMProvider
@@ -12,6 +16,7 @@ _SUFFIX = (
 
 
 def run(*, provider: LLMProvider, parsed: ParsedFile, on_tool_call=None) -> FileSummary:
+    """Drive the ReAct loop for a parsed VTT/SRT transcript; returns the produced FileSummary."""
     cap = get_settings().per_file_iteration_cap
     return run_react_loop(
         provider=provider, parsed=parsed,

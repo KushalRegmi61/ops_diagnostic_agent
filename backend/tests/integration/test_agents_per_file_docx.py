@@ -1,3 +1,8 @@
+"""Per-file DOCX agent against real Ollama + parser.
+
+Drives the agent on a fixture and asserts every emitted Source round-trips
+through the parser. Skipped when Ollama is unreachable.
+"""
 import httpx
 import pytest
 from pathlib import Path
@@ -10,6 +15,7 @@ from app.parsers import docx as docx_parser
 
 
 def _ollama_up(base_url: str) -> bool:
+    """Return True if Ollama responds to GET /api/tags within 2 seconds."""
     try:
         return httpx.get(f"{base_url}/api/tags", timeout=2.0).status_code == 200
     except Exception:
@@ -23,6 +29,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_per_file_docx_emits_valid_file_summary():
+    """Agent.run emits a FileSummary whose Sources all round-trip through the parser."""
     fixture = Path(__file__).parent.parent / "fixtures" / "sop.docx"
     parsed = docx_parser.parse(file_id="f1", file_name="sop.docx", path=fixture)
     get_provider.cache_clear()

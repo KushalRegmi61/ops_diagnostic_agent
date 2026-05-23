@@ -1,9 +1,18 @@
+"""Application configuration via pydantic-settings.
+
+Reads `.env` into a `Settings` model that every layer (HTTP, services, graph,
+agents, parsers, providers) consults through the cached `get_settings()`
+accessor. Tests that mutate environment variables mid-suite must call
+`get_settings.cache_clear()` to re-read.
+"""
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Typed application settings loaded from environment / .env file."""
+
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
     database_url: str
@@ -29,6 +38,13 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     langgraph_checkpointer: Literal["redis"] = "redis"
     langgraph_checkpoint_namespace: str = "ops_diagnostic"
+    # TTL for LangGraph checkpoint keys in Redis, in minutes. None disables expiry
+    # (keys persist until manually deleted). Default 1440 = 24h, enough to debug a
+    # failed run the next morning while preventing unbounded growth.
+    langgraph_checkpoint_ttl_minutes: int | None = 1440
+    # If True, reading a checkpoint refreshes its TTL — useful for long-running
+    # human-in-the-loop flows that should stay alive while a human is engaged.
+    langgraph_checkpoint_refresh_on_read: bool = False
 
     # Langfuse
     langfuse_public_key: str | None = None
@@ -41,4 +57,5 @@ class Settings(BaseSettings):
 
 
 def get_settings() -> Settings:
+    """Return a fresh Settings instance — call sites typically cache this themselves."""
     return Settings()

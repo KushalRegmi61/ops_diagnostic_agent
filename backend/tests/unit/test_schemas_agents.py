@@ -1,3 +1,8 @@
+"""Pydantic schemas used by lead + per-file agents.
+
+Covers WorkflowRecord, FileSummary, RevisionRequest, SummaryReview, IntakeBundle,
+Opportunity, BlueprintClaim, and FinalReview validation rules.
+"""
 import pytest
 from pydantic import ValidationError
 
@@ -20,6 +25,7 @@ from app.schemas import (
 
 
 def _src(file_id: str = "f1") -> Source:
+    """Return a minimal valid PDF-locator Source for a given file_id."""
     return Source(
         file_id=file_id, file_name="x.pdf", type="pdf",
         locator={"type": "pdf", "page": 1, "span_start": 0, "span_end": 10},
@@ -27,6 +33,7 @@ def _src(file_id: str = "f1") -> Source:
 
 
 def test_workflow_record_requires_sources():
+    """WorkflowRecord retains the Source list it was constructed with."""
     wf = WorkflowRecord(
         name="onboarding", actors=["CSR"], systems=["Applied Epic"],
         steps=["verify id"], manual_touchpoints=["copy"], sources=[_src()],
@@ -35,6 +42,7 @@ def test_workflow_record_requires_sources():
 
 
 def test_file_summary_round_trips():
+    """FileSummary constructs with empty collections and preserves identity fields."""
     fs = FileSummary(
         file_id="f1", file_name="x.pdf",
         one_paragraph_summary="summary",
@@ -45,16 +53,19 @@ def test_file_summary_round_trips():
 
 
 def test_revision_request_rejects_unknown_reason():
+    """RevisionRequest enforces a closed set of reason codes."""
     with pytest.raises(ValidationError):
         RevisionRequest(file_id="f1", reason="bogus", detail="x")
 
 
 def test_summary_review_allows_empty_requests():
+    """SummaryReview accepts an empty revision_requests list."""
     sr = SummaryReview(revision_requests=[], notes="all good")
     assert sr.notes == "all good"
 
 
 def test_intake_bundle_holds_contradictions():
+    """IntakeBundle.contradictions stores conflicting statements with sources."""
     bundle = IntakeBundle(
         workflows=[], pain_signals=[], lead_rows=[],
         contradictions=[Contradiction(topic="CRM name", statements=[
@@ -68,6 +79,7 @@ def test_intake_bundle_holds_contradictions():
 
 
 def test_opportunity_score_ranges():
+    """Opportunity accepts in-range pain/roi/effort/risk scores."""
     op = Opportunity(
         workflow_name="lead-intake", bottleneck_refs=[0],
         pain_score=7, roi_score=8, effort_score=4, risk_score=2,
@@ -78,11 +90,13 @@ def test_opportunity_score_ranges():
 
 
 def test_blueprint_claim_carries_sources():
+    """BlueprintClaim retains the sources attached at construction."""
     bc = BlueprintClaim(text="connect HubSpot to Drive", sources=[_src()])
     assert bc.sources[0].file_id == "f1"
 
 
 def test_final_review_pass_fail_per_check():
+    """FinalReview exposes independent boolean flags for each gate."""
     fr = FinalReview(
         citation_existence_ok=True, citation_reachability_ok=True,
         no_silent_drops_ok=True, internal_consistency_ok=True,

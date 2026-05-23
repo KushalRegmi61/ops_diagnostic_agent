@@ -1,9 +1,11 @@
+"""get_provider() factory selection + validation, with no network calls."""
 import pytest
 
 from app.llm import get_provider
 
 
 def test_factory_returns_ollama_by_default(monkeypatch):
+    """LLM_PROVIDER=ollama yields an OllamaProvider instance."""
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
     monkeypatch.setenv("DATABASE_URL", "sqlite:///./test.db")
     monkeypatch.setenv("BLOB_STORE_DIR", "./test_blobs")
@@ -13,6 +15,7 @@ def test_factory_returns_ollama_by_default(monkeypatch):
 
 
 def test_factory_rejects_openai_without_key(monkeypatch):
+    """LLM_PROVIDER=openai without OPENAI_API_KEY raises a runtime error."""
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "")
     monkeypatch.setenv("DATABASE_URL", "sqlite:///./test.db")

@@ -10,6 +10,7 @@ from app.schemas import Blueprint, BlueprintClaim, Source
 
 
 def _src(file_id: str = "f1", line_start: int = 1, line_end: int = 1) -> Source:
+    """Return a markdown-text Source for the given file and line range."""
     return Source(
         file_id=file_id, file_name="x.md", type="md",
         locator={"type": "text", "line_start": line_start, "line_end": line_end},
@@ -17,6 +18,7 @@ def _src(file_id: str = "f1", line_start: int = 1, line_end: int = 1) -> Source:
 
 
 def _bp(sources: list[Source]) -> Blueprint:
+    """Build a Blueprint with one claim repeated across all slots."""
     claim = BlueprintClaim(text="t", sources=sources)
     return Blueprint(
         opportunity_ref=0, summary=claim, steps=[claim],
@@ -25,12 +27,14 @@ def _bp(sources: list[Source]) -> Blueprint:
 
 
 def test_existence_passes_when_all_ids_in_index():
+    """_check_existence passes when every source.file_id is in the known set."""
     bp = _bp([_src("f1")])
     ok, bad = _check_existence(_all_sources(bp), {"f1"})
     assert ok and bad == []
 
 
 def test_existence_fails_on_unknown_id():
+    """_check_existence fails and returns the unknown file_id in the bad list."""
     bp = _bp([_src("f1"), _src("f_ghost")])
     ok, bad = _check_existence(_all_sources(bp), {"f1"})
     assert not ok
@@ -38,6 +42,7 @@ def test_existence_fails_on_unknown_id():
 
 
 def test_reachability_round_trips_through_parser(tmp_path: Path):
+    """_check_reachability passes when each locator round-trips through md.excerpt."""
     p = tmp_path / "doc.md"
     p.write_text("# Hello\n\nSome body text.\n")
     parsed = md_parse(file_id="f1", file_name="doc.md", path=p)
@@ -48,6 +53,7 @@ def test_reachability_round_trips_through_parser(tmp_path: Path):
 
 
 def test_reachability_fails_on_missing_parsed_file():
+    """_check_reachability fails when the source file_id has no ParsedFile."""
     bp = _bp([_src("f_unknown")])
     ok, bad = _check_reachability(_all_sources(bp), {})
     assert not ok
@@ -55,6 +61,7 @@ def test_reachability_fails_on_missing_parsed_file():
 
 
 def test_reachability_fails_on_bad_locator(tmp_path: Path):
+    """_check_reachability fails when the locator points outside the file."""
     p = tmp_path / "doc.md"
     p.write_text("# Hi\n")
     parsed = md_parse(file_id="f1", file_name="doc.md", path=p)

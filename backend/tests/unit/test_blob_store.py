@@ -1,9 +1,11 @@
+"""Blob store: write then read round-trip and path layout."""
 from pathlib import Path
 
 from app.blob_store import blob_path_for, load_blob, save_blob
 
 
 def test_save_and_load_blob(tmp_path, monkeypatch):
+    """save_blob writes bytes that load_blob can read back identically."""
     monkeypatch.setattr("app.blob_store.BLOB_DIR", tmp_path)
     path = save_blob("f_abc", "hello.pdf", b"binary-data")
     assert Path(path).exists()
@@ -11,6 +13,7 @@ def test_save_and_load_blob(tmp_path, monkeypatch):
 
 
 def test_blob_path_includes_file_id(tmp_path, monkeypatch):
+    """Blob paths place each file under a directory named for its file_id."""
     monkeypatch.setattr("app.blob_store.BLOB_DIR", tmp_path)
     p = blob_path_for("f_xyz", "doc.txt")
     assert "f_xyz" in str(p)

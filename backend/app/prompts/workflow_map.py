@@ -1,3 +1,9 @@
+"""Prompt for the ``workflow_map`` lead node.
+
+Consolidates and de-duplicates per-file WorkflowRecord lists across the bundle.
+The strict schema example is included to keep small-model output well-typed.
+"""
+
 PROMPT = """You are the workflow-mapper. Given an IntakeBundle, return list[WorkflowRecord]
 that consolidates and de-duplicates workflows across files. Every workflow MUST carry
 non-empty sources.

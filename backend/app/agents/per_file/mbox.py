@@ -1,4 +1,8 @@
-"""Per-file agent for MBOX email exports."""
+"""Per-file ReAct agent for MBOX email exports.
+
+Each parsed segment is one message body; the prompt suffix nudges the agent
+to treat qualifying messages as lead rows with ``mbox`` message-id locators.
+"""
 from app.agents.per_file._react_loop import run_react_loop
 from app.config import get_settings
 from app.llm.base import LLMProvider
@@ -12,6 +16,7 @@ _SUFFIX = (
 
 
 def run(*, provider: LLMProvider, parsed: ParsedFile, on_tool_call=None) -> FileSummary:
+    """Drive the ReAct loop for a parsed MBOX file; returns the produced FileSummary."""
     cap = get_settings().per_file_iteration_cap
     return run_react_loop(
         provider=provider, parsed=parsed,

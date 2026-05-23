@@ -1,3 +1,11 @@
+"""Prompt for the ``self_review_final`` lead node.
+
+The LLM portion of final review: judges no_silent_drops_ok and
+internal_consistency_ok. Deterministic checks (citation existence and excerpt
+reachability) run in code around this prompt — together they gate the bounded
+revision loop back to ``solution_blueprint``.
+"""
+
 PROMPT = """You are a strict reviewer of the diagnostic blueprint.
 
 Judge two things only:

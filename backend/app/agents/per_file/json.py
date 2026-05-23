@@ -1,4 +1,8 @@
-"""Per-file agent for JSON exports (CRM dumps and similar)."""
+"""Per-file ReAct agent for JSON exports (CRM dumps and similar).
+
+Segments are leaf values addressed by RFC 6901 pointers; the prompt suffix
+guides the agent to reconstruct contact/lead objects from sibling leaves.
+"""
 from app.agents.per_file._react_loop import run_react_loop
 from app.config import get_settings
 from app.llm.base import LLMProvider
@@ -12,6 +16,7 @@ _SUFFIX = (
 
 
 def run(*, provider: LLMProvider, parsed: ParsedFile, on_tool_call=None) -> FileSummary:
+    """Drive the ReAct loop for a parsed JSON file; returns the produced FileSummary."""
     cap = get_settings().per_file_iteration_cap
     return run_react_loop(
         provider=provider, parsed=parsed,

@@ -23,10 +23,14 @@ from app.schemas import Blueprint, FileRef
 
 
 class RunNotFoundError(Exception):
+    """Raised when a run_id has no row in `runs` or no associated files."""
+
     pass
 
 
 class FileNotFoundForRunError(Exception):
+    """Raised when a file_id supplied to create_run does not exist in `files`."""
+
     pass
 
 
@@ -48,6 +52,7 @@ def create_run(db: Session, *, file_ids: list[str]) -> str:
 
 
 def _load_files_and_parse(db: Session, run_id: str) -> tuple[list[FileRef], dict]:
+    """Load FileRecord rows for a run and re-parse those whose upload-time parse succeeded."""
     rows = db.query(FileRecord).filter(FileRecord.run_id == run_id).all()
     if not rows:
         raise RunNotFoundError(f"run {run_id} has no files")
@@ -132,6 +137,7 @@ def start_run(db: Session, *, run_id: str, redo_cap: int = 1, revision_cap: int 
 
 
 def get_blueprint(db: Session, *, run_id: str) -> Blueprint | None:
+    """Return the persisted Blueprint for a run, or None if none was produced."""
     rec = db.get(BlueprintRecord, run_id)
     if rec is None:
         return None

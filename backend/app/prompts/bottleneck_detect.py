@@ -1,3 +1,10 @@
+"""Prompt for the ``bottleneck_detect`` lead node.
+
+Pairs each consolidated workflow with PainSignals from the bundle to emit one
+Bottleneck per distinct problem. Every Bottleneck must carry sources so the
+downstream citation invariant holds.
+"""
+
 PROMPT = """You are the bottleneck-detector. For each workflow, identify bottlenecks
 using pain signals from the bundle. Emit one Bottleneck per distinct problem.
 Every Bottleneck MUST carry sources.

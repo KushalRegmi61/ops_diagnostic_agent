@@ -1,3 +1,10 @@
+"""FastAPI HTTP layer for the Ops Diagnostic Agent.
+
+Exposes the public endpoints (/health, /api/files, /api/files/{id}/excerpt,
+/api/runs, /api/runs/{id}, /api/runs/{id}/blueprint) and keeps handlers thin —
+all DB writes, parsing, and graph invocation are delegated to `app.services.*`.
+Sits at the top of the pipeline: HTTP -> services -> graph -> agents -> parsers.
+"""
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
@@ -30,6 +37,7 @@ from app.services.runs import (
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    """FastAPI lifespan: create DB tables on startup."""
     Base.metadata.create_all(engine)
     yield
 
@@ -52,15 +60,20 @@ _EXCERPT_MODULES = {
 
 
 class ExcerptRequest(BaseModel):
+    """Request body for the excerpt endpoint — carries a raw locator dict."""
+
     locator: dict
 
 
 class ExcerptResponse(BaseModel):
+    """Response body carrying the resolved excerpt text from a parser."""
+
     text: str
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    """Liveness probe — always returns {"status": "ok"}."""
     return {"status": "ok"}
 
 
@@ -69,6 +82,7 @@ def post_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> FileRef:
+    """Upload a single file: persists bytes to blob store, parses, and inserts a FileRecord row."""
     content = file.file.read()
     ref = upload_file(
         db,
@@ -86,6 +100,7 @@ def post_excerpt(
     body: ExcerptRequest,
     db: Session = Depends(get_db),
 ) -> ExcerptResponse:
+    """Resolve a Source locator back to its excerpt text — round-trips the citation invariant."""
     try:
         parsed = get_parsed(db, file_id)
     except ValueError:
@@ -102,10 +117,14 @@ def post_excerpt(
 
 
 class CreateRunRequest(BaseModel):
+    """Request body for creating a diagnostic run from previously uploaded files."""
+
     file_ids: list[str]
 
 
 class RunResponse(BaseModel):
+    """Response describing a run's id, lifecycle status, and optional Langfuse trace id."""
+
     run_id: str
     status: str
     langfuse_trace_id: str | None = None
@@ -135,6 +154,7 @@ def post_run(body: CreateRunRequest, db: Session = Depends(get_db)) -> RunRespon
 
 @app.get("/api/runs/{run_id}", response_model=RunResponse)
 def get_run(run_id: str, db: Session = Depends(get_db)) -> RunResponse:
+    """Return the current status of a run by id."""
     run = db.get(Run, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f"run {run_id} not found")
@@ -143,6 +163,7 @@ def get_run(run_id: str, db: Session = Depends(get_db)) -> RunResponse:
 
 @app.get("/api/runs/{run_id}/blueprint", response_model=Blueprint)
 def get_run_blueprint(run_id: str, db: Session = Depends(get_db)) -> Blueprint:
+    """Fetch the persisted Blueprint for a completed run; 404 if not yet produced."""
     if db.get(Run, run_id) is None:
         raise HTTPException(status_code=404, detail=f"run {run_id} not found")
     bp = get_blueprint(db, run_id=run_id)

@@ -1,3 +1,9 @@
+"""Lead node: detect bottlenecks per workflow.
+
+Second step of the five-node diagnostic chain. Consumes the workflows from
+``workflow_map`` together with the full IntakeBundle (for pain signals and
+contradictions) and returns a list of Bottleneck objects with cited sources.
+"""
 import json
 
 from pydantic import BaseModel
@@ -8,10 +14,12 @@ from app.schemas import Bottleneck, IntakeBundle, WorkflowRecord
 
 
 class _Wrap(BaseModel):
+    """Schema wrapper so the LLM returns a JSON object with a ``bottlenecks`` key."""
     bottlenecks: list[Bottleneck]
 
 
 def run(*, provider: LLMProvider, bundle: IntakeBundle, workflows: list[WorkflowRecord]) -> list[Bottleneck]:
+    """Detect bottlenecks via one LLM call; returns an empty list on parse failure."""
     prompt = PROMPT.format(
         workflows_json=json.dumps([w.model_dump() for w in workflows], indent=2),
         bundle_json=json.dumps(bundle.model_dump(), indent=2),

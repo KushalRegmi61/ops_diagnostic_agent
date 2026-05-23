@@ -8,13 +8,17 @@ from app.schemas import FinalReview
 
 
 class _StubProvider:
+    """Stub LLM provider that fails loudly if a node attempts to call it."""
+
     name = "stub"
 
     def generate_json(self, **_):
+        """Refuse any LLM call — structural tests must not reach the model."""
         raise AssertionError("graph structure test must not call the LLM")
 
 
 def test_initial_state_shape():
+    """initial_state seeds run_id, empty collections, and zero counters."""
     s = initial_state("run_abc", [])
     assert s["run_id"] == "run_abc"
     assert s["files"] == []
@@ -26,6 +30,7 @@ def test_initial_state_shape():
 
 
 def test_final_review_ok_all_true():
+    """_final_review_ok returns True when every gate is True."""
     fr = FinalReview(
         citation_existence_ok=True, citation_reachability_ok=True,
         no_silent_drops_ok=True, internal_consistency_ok=True,
@@ -35,6 +40,7 @@ def test_final_review_ok_all_true():
 
 
 def test_final_review_ok_any_false():
+    """_final_review_ok returns False when any individual gate fails."""
     fr = FinalReview(
         citation_existence_ok=True, citation_reachability_ok=False,
         no_silent_drops_ok=True, internal_consistency_ok=True,
@@ -44,6 +50,7 @@ def test_final_review_ok_any_false():
 
 
 def test_graph_compiles_and_exposes_all_nodes():
+    """build_graph compiles a workflow whose node set matches the spec."""
     compiled = build_graph(provider=_StubProvider(), parsed_files={})
     nodes = set(compiled.get_graph().nodes.keys())
     expected = {

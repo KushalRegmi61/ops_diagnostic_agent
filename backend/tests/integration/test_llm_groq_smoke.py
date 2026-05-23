@@ -1,3 +1,7 @@
+"""GroqProvider.generate_json smoke test against the real Groq API.
+
+Skipped unless GROQ_API_KEY is set in the environment.
+"""
 import os
 
 import pytest
@@ -17,6 +21,7 @@ class EchoSchema(BaseModel):
 
 @pytest.mark.skipif(not API_KEY, reason="GROQ_API_KEY not set")
 def test_groq_generate_json_returns_schema_valid_object():
+    """Groq generate_json returns a schema-valid object with parsed_json=True."""
     provider = GroqProvider(api_key=API_KEY, base_url=BASE_URL, model=MODEL)
     prompt = (
         "Classify the sentiment of: 'This product is great!'.\n"

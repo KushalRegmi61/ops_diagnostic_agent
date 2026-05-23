@@ -1,3 +1,4 @@
+"""Settings loading + validation from environment variables."""
 import pytest
 from pydantic import ValidationError
 
@@ -5,6 +6,7 @@ from app.config import Settings
 
 
 def test_settings_loads_from_env(monkeypatch):
+    """Settings reads provider, DB URL, and Ollama config from env."""
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
     monkeypatch.setenv("DATABASE_URL", "sqlite:///./test.db")
     monkeypatch.setenv("BLOB_STORE_DIR", "./test_blobs")
@@ -17,6 +19,7 @@ def test_settings_loads_from_env(monkeypatch):
 
 
 def test_settings_rejects_unknown_provider(monkeypatch):
+    """An unsupported LLM_PROVIDER value raises ValidationError."""
     monkeypatch.setenv("LLM_PROVIDER", "anthropic")
     monkeypatch.setenv("DATABASE_URL", "sqlite:///./test.db")
     monkeypatch.setenv("BLOB_STORE_DIR", "./test_blobs")
@@ -25,6 +28,7 @@ def test_settings_rejects_unknown_provider(monkeypatch):
 
 
 def test_settings_loads_redis_and_langfuse(monkeypatch):
+    """Settings carries Redis URL plus Langfuse keys/base URL through unchanged."""
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
     monkeypatch.setenv("DATABASE_URL", "sqlite:///./test.db")
     monkeypatch.setenv("BLOB_STORE_DIR", "./test_blobs")

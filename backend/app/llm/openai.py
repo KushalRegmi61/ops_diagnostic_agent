@@ -1,3 +1,9 @@
+"""OpenAI provider using the official SDK with ``response_format=json_object``.
+
+Also used as the engine for Groq and other OpenAI-compatible endpoints (see
+``groq.py`` and ``openai_compat.py``), which wrap this class and only override
+the reported provider ``name``.
+"""
 import json
 import time
 from typing import Type
@@ -9,9 +15,12 @@ from app.llm.base import GenerateMetadata
 
 
 class OpenAIProvider:
+    """LLMProvider using the OpenAI Python SDK in strict JSON-object mode."""
+
     name = "openai"
 
     def __init__(self, *, api_key: str, model: str, base_url: str | None = None) -> None:
+        """Construct an ``openai.OpenAI`` client, optionally pointed at a custom base URL."""
         self.client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI(api_key=api_key)
         self.model = model
 
@@ -26,6 +35,7 @@ class OpenAIProvider:
         top_p: float | None = None,
         seed: int | None = None,
     ) -> tuple[dict, GenerateMetadata]:
+        """Call chat.completions in JSON mode, retry once on schema failure, return (parsed, meta)."""
         retry_count = 0
         messages: list[dict] = [{"role": "user", "content": prompt}]
         start = time.perf_counter()

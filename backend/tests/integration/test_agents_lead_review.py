@@ -1,3 +1,8 @@
+"""review_summaries lead node against real Ollama.
+
+Verifies the reviewer node produces a structurally valid SummaryReview when
+given a deliberately gap-laden FileSummary. Skipped when Ollama is unreachable.
+"""
 import httpx
 import pytest
 
@@ -8,6 +13,7 @@ from app.schemas import FileSummary, PainSignal, Source
 
 
 def _ollama_up(base_url):
+    """Return True if Ollama responds to GET /api/tags within 2 seconds."""
     try:
         return httpx.get(f"{base_url}/api/tags", timeout=2.0).status_code == 200
     except Exception:
@@ -21,6 +27,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_reviewer_returns_valid_summary_review():
+    """review_summaries.run returns a SummaryReview with a list of revision_requests."""
     src = Source(file_id="f1", file_name="x.md", type="md",
                  locator={"type": "text", "line_start": 1, "line_end": 1})
     pain = PainSignal(text="leads are slow", category="delay", sources=[])  # crafted gap: no sources

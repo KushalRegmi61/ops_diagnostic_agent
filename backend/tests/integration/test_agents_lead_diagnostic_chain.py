@@ -1,3 +1,9 @@
+"""Full five-node lead diagnostic chain (workflow_map -> blueprint) against Ollama.
+
+Drives workflow_map, bottleneck_detect, roi_score, fastest_win_select, and
+solution_blueprint in sequence on a hand-built IntakeBundle. Skipped when
+Ollama is unreachable.
+"""
 import httpx
 import pytest
 
@@ -10,6 +16,7 @@ from app.schemas import IntakeBundle, PainSignal, Source, WorkflowRecord
 
 
 def _ollama_up(base_url):
+    """Return True if Ollama responds to GET /api/tags within 2 seconds."""
     try:
         return httpx.get(f"{base_url}/api/tags", timeout=2.0).status_code == 200
     except Exception:
@@ -23,6 +30,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def _bundle() -> IntakeBundle:
+    """Build a one-workflow, one-pain-signal IntakeBundle to seed the chain."""
     src = Source(file_id="f1", file_name="x.md", type="md",
                  locator={"type": "text", "line_start": 1, "line_end": 1})
     wf = WorkflowRecord(
@@ -38,6 +46,7 @@ def _bundle() -> IntakeBundle:
 
 
 def test_full_diagnostic_chain_emits_blueprint():
+    """All five diagnostic nodes chain to a Blueprint whose claims have sources."""
     bundle = _bundle()
     get_provider.cache_clear()
     p = get_provider()

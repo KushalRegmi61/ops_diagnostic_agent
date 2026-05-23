@@ -21,6 +21,7 @@ current_trace: ContextVar[Any] = ContextVar("current_trace", default=None)
 
 @lru_cache(maxsize=1)
 def langfuse_client():
+    """Return a cached Langfuse v3 client, or None if keys/SDK are unavailable."""
     s = get_settings()
     if not (s.langfuse_public_key and s.langfuse_secret_key):
         return None

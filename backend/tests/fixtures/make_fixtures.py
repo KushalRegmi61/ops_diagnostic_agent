@@ -12,6 +12,7 @@ FIXTURE_DIR = Path(__file__).parent
 
 
 def make_pdf() -> None:
+    """Write a two-page SOP PDF used by the pdf parser/agent tests."""
     doc = fitz.open()
     page1 = doc.new_page()
     page1.insert_text((72, 72), "Inbound Lead SOP\nStep 1: collect contact info.\nStep 2: send document request.")
@@ -22,6 +23,7 @@ def make_pdf() -> None:
 
 
 def make_docx() -> None:
+    """Write an onboarding SOP DOCX with three paragraphs."""
     doc = Document()
     doc.add_paragraph("Onboarding SOP")
     doc.add_paragraph("Step 1: verify lead identity.")
@@ -30,18 +32,21 @@ def make_docx() -> None:
 
 
 def make_md() -> None:
+    """Write a Markdown notes fixture covering producer pain points."""
     (FIXTURE_DIR / "notes.md").write_text(
         "# Producer Notes\n\nLeads waiting > 24h before first response.\nCSR manually copies CRM notes.\n"
     )
 
 
 def make_txt() -> None:
+    """Write a plain-text discovery-call summary fixture."""
     (FIXTURE_DIR / "notes.txt").write_text(
         "Discovery call summary.\nClient mentioned slow document collection.\nProducer follow-up inconsistent.\n"
     )
 
 
 def make_vtt() -> None:
+    """Write a two-cue WEBVTT transcript fixture."""
     (FIXTURE_DIR / "call.vtt").write_text(
         "WEBVTT\n\n"
         "00:00:01.000 --> 00:00:05.000\n"
@@ -52,6 +57,7 @@ def make_vtt() -> None:
 
 
 def make_srt() -> None:
+    """Write a two-cue SRT transcript fixture."""
     (FIXTURE_DIR / "call.srt").write_text(
         "1\n00:00:01,000 --> 00:00:05,000\nFounder: our biggest issue is lead response time.\n\n"
         "2\n00:00:06,000 --> 00:00:10,000\nCSR: we copy notes from email to HubSpot manually.\n"
@@ -59,6 +65,7 @@ def make_srt() -> None:
 
 
 def make_csv() -> None:
+    """Write a leads CSV with three rows used by csv parser/table agent tests."""
     df = pd.DataFrame(
         [
             {"name": "Acme Corp", "email": "ops@acme.com", "stage": "awaiting_docs", "days_in_stage": 12},
@@ -70,6 +77,7 @@ def make_csv() -> None:
 
 
 def make_xlsx() -> None:
+    """Write a single-sheet leads XLSX workbook."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Leads"
@@ -80,6 +88,7 @@ def make_xlsx() -> None:
 
 
 def make_mbox() -> None:
+    """Write an mbox fixture with a single inbound quote-request message."""
     path = FIXTURE_DIR / "inbox.mbox"
     if path.exists():
         path.unlink()
@@ -95,6 +104,7 @@ def make_mbox() -> None:
 
 
 def make_json() -> None:
+    """Write a small CRM-style JSON document with nested contact records."""
     payload = {
         "contacts": [
             {"id": "c1", "name": "Acme Corp", "last_touch_days": 12, "stage": "awaiting_docs"},
@@ -105,6 +115,7 @@ def make_json() -> None:
 
 
 def main() -> None:
+    """Regenerate all parser fixtures in place. Idempotent."""
     make_pdf()
     make_docx()
     make_md()

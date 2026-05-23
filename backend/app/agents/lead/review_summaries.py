@@ -1,3 +1,10 @@
+"""Lead node: review per-file summaries and optionally request a bounded redo.
+
+Single-shot LLM call over the dict of FileSummary objects produced by the
+per-file ReAct agents. Returns a SummaryReview whose ``revision_requests``
+list, when non-empty, triggers the ``redo_inc`` branch in the parent graph
+(capped at one pass).
+"""
 import json
 
 from app.llm.base import LLMProvider
@@ -6,6 +13,7 @@ from app.schemas import FileSummary, SummaryReview
 
 
 def run(*, provider: LLMProvider, file_summaries: dict[str, FileSummary]) -> SummaryReview:
+    """Gate per-file summaries via one LLM call; degrades to a no-revision review on parse failure."""
     summaries_json = json.dumps(
         {fid: fs.model_dump() for fid, fs in file_summaries.items()}, indent=2,
     )

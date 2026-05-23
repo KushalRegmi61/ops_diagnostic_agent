@@ -1,13 +1,20 @@
+"""search_text tool: token-overlap + substring search over a ParsedFile.
+
+Cheap deterministic retrieval the ReAct agent uses to locate candidate
+segments before calling ``read_segment`` for full text.
+"""
 import re
 
 from app.schemas import ParsedFile
 
 
 def _tokenize(s: str) -> set[str]:
+    """Lowercased word-token set built by splitting on non-word characters."""
     return {t.lower() for t in re.split(r"\W+", s) if t}
 
 
 def _score(segment_text: str, query: str) -> float:
+    """Combine token overlap (70%) with substring presence (30%) into a 0..1 score."""
     seg_tokens = _tokenize(segment_text)
     q_tokens = _tokenize(query)
     if not q_tokens:

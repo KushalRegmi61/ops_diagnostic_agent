@@ -1,3 +1,9 @@
+"""Lead node: pick the single highest-ROI, lowest-effort opportunity.
+
+Fourth step of the diagnostic chain. Returns one Opportunity (or None when
+the list is empty). Falls back to a deterministic ``roi - effort - risk``
+ranking when the LLM cannot produce a valid index.
+"""
 import json
 
 from pydantic import BaseModel
@@ -8,10 +14,12 @@ from app.schemas import Opportunity
 
 
 class _Wrap(BaseModel):
+    """Schema wrapper carrying the LLM's chosen index into the opportunities list."""
     selected_index: int
 
 
 def run(*, provider: LLMProvider, opportunities: list[Opportunity]) -> Opportunity | None:
+    """Select the fastest-win opportunity; deterministic sort fallback when the LLM fails or returns OOB."""
     if not opportunities:
         return None
     prompt = PROMPT.format(opportunities_json=json.dumps([o.model_dump() for o in opportunities], indent=2))

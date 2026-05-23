@@ -21,6 +21,7 @@ _ORIGINAL = JsonPlusRedisSerializer._default_handler
 
 
 def _patched_default_handler(self: JsonPlusRedisSerializer, obj: Any) -> Any:
+    """Serializer fallback: dump Pydantic models via model_dump(); otherwise delegate to original."""
     if isinstance(obj, BaseModel):
         return obj.model_dump(mode="json")
     return _ORIGINAL(self, obj)

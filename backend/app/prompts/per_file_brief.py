@@ -34,4 +34,5 @@ You start with no prior context. Begin by calling search_text or read_segment to
 
 
 def render_brief(*, iteration_cap: int) -> str:
+    """Return the per-file extraction brief with the ReAct iteration cap interpolated."""
     return EXTRACTION_BRIEF.format(iteration_cap=iteration_cap)

@@ -1,4 +1,12 @@
-"""Parser registry. Each parser module exposes parse(*, file_id, file_name, path) and excerpt(parsed, locator)."""
+"""Parser registry and shared dispatch entry points.
+
+Each parser module under ``app.parsers`` exposes a ``parse(*, file_id, file_name, path)``
+that produces a ``ParsedFile`` of typed segments, and an ``excerpt(parsed, locator)``
+that round-trips a Source locator back to its original text. This module routes by
+MIME type for ``parse`` and by ``ParsedFile.type`` for ``excerpt`` so the rest of the
+system (citation validator, /api/files/{id}/excerpt endpoint, self_review_final)
+can treat every file family uniformly.
+"""
 from pathlib import Path
 
 from app.schemas import ParsedFile
@@ -32,6 +40,7 @@ _EXCERPT_ROUTES = {
 
 
 def parse(file_id: str, file_name: str, path: Path, mime_type: str) -> ParsedFile:
+    """Dispatch to the parser module registered for ``mime_type`` and return a ParsedFile."""
     module_name = _MIME_ROUTES.get(mime_type)
     if module_name is None:
         raise ValueError(f"No parser registered for mime_type={mime_type}")
@@ -40,7 +49,7 @@ def parse(file_id: str, file_name: str, path: Path, mime_type: str) -> ParsedFil
 
 
 def excerpt(parsed: ParsedFile, locator: dict) -> str:
-    """Dispatch to the excerpt() of the parser module matching parsed.type."""
+    """Dispatch to the ``excerpt()`` of the parser module matching ``parsed.type`` and return the locator's text."""
     module_name = _EXCERPT_ROUTES.get(parsed.type)
     if module_name is None:
         raise ValueError(f"No excerpt module for parsed.type={parsed.type}")

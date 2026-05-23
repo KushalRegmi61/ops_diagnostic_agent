@@ -1,3 +1,10 @@
+"""Files service — upload + parse orchestration.
+
+Owns the DB writes for `FileRecord` rows and the blob store side effects
+during upload. `get_parsed` re-parses a file from disk on demand so the
+HTTP excerpt endpoint can round-trip citations without keeping ParsedFile
+segments in memory between requests.
+"""
 import uuid
 from pathlib import Path
 
@@ -10,6 +17,7 @@ from app.schemas import FileRef, ParsedFile
 
 
 def upload_file(db: Session, *, file_name: str, mime_type: str, content: bytes) -> FileRef:
+    """Mint a file_id, persist bytes to the blob store, attempt to parse, and insert a FileRecord row."""
     file_id = f"f_{uuid.uuid4().hex[:12]}"
     blob_path = save_blob(file_id, file_name, content)
 
@@ -41,6 +49,7 @@ def upload_file(db: Session, *, file_name: str, mime_type: str, content: bytes) 
 
 
 def get_parsed(db: Session, file_id: str) -> ParsedFile:
+    """Re-parse the stored bytes for a file_id and return the ParsedFile; raises ValueError if unknown."""
     rec = db.get(FileRecord, file_id)
     if rec is None:
         raise ValueError(f"File {file_id} not found")

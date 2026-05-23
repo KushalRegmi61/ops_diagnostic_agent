@@ -19,6 +19,7 @@ from app.main import app
 
 
 def _ollama_up(base_url: str) -> bool:
+    """Return True if Ollama responds to GET /api/tags within 2 seconds."""
     try:
         return httpx.get(f"{base_url}/api/tags", timeout=2.0).status_code == 200
     except Exception:
@@ -41,11 +42,13 @@ _FIXTURE_DIR = Path(__file__).parent.parent / "fixtures"
 
 
 def setup_function(_):
+    """Reset the production SQLite schema between tests (drop + recreate)."""
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
 
 
 def _upload(client: TestClient, name: str, mime: str) -> str:
+    """POST a fixture file to /api/files and return its file_id (asserts parse=ok)."""
     path = _FIXTURE_DIR / name
     with path.open("rb") as f:
         r = client.post("/api/files", files={"file": (name, f, mime)})
@@ -56,6 +59,7 @@ def _upload(client: TestClient, name: str, mime: str) -> str:
 
 
 def test_full_pipeline_emits_cited_blueprint(tmp_path, monkeypatch):
+    """Three uploads -> /api/runs -> /blueprint round-trips a citation through /excerpt."""
     monkeypatch.setattr("app.blob_store.BLOB_DIR", tmp_path)
     client = TestClient(app)
 

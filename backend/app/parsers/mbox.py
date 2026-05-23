@@ -1,3 +1,8 @@
+"""MBOX email parser. One ParsedSegment per message body; multipart payloads
+are flattened by concatenating their string payloads. Locator type ``mbox``
+carries the RFC ``Message-ID`` and a ``section`` discriminator (currently
+always ``body``) so per-message attachments can later get their own section.
+"""
 import mailbox
 from pathlib import Path
 
@@ -5,6 +10,7 @@ from app.schemas import ParsedFile, ParsedSegment
 
 
 def parse(*, file_id: str, file_name: str, path: Path) -> ParsedFile:
+    """Open the mbox at ``path`` and emit one ``mbox``-locator segment per message body."""
     mbox = mailbox.mbox(str(path))
     segments: list[ParsedSegment] = []
     try:
@@ -24,6 +30,7 @@ def parse(*, file_id: str, file_name: str, path: Path) -> ParsedFile:
 
 
 def excerpt(parsed: ParsedFile, locator: dict) -> str:
+    """Return the message body matching ``message_id`` and ``section`` (default ``body``)."""
     msg_id = locator["message_id"]
     section = locator.get("section", "body")
     for seg in parsed.segments:

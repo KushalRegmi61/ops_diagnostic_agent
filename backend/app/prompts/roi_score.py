@@ -1,3 +1,10 @@
+"""Prompt for the ``roi_score`` lead node.
+
+Turns bottleneck clusters into scored Opportunities (pain/roi/effort/risk on
+1-10 plus hours_saved_per_week and response_time_impact) that the next node
+ranks to pick the fastest win.
+"""
+
 PROMPT = """You are the ROI scorer. For each meaningful bottleneck cluster, propose an
 Opportunity with scores 1-10 on pain, roi, effort, risk; hours_saved_per_week (float);
 response_time_impact (string like '-50%'); rationale; and sources.

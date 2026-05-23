@@ -70,6 +70,7 @@ def build_graph(
 
     # --- Nodes (each wrapped in a Langfuse span via node_span) ---
     def per_file_fanout(state: DiagnosticState) -> dict:
+        """Run each file's per-file ReAct agent; on redo, only re-runs files flagged by review."""
         review = state.get("summary_review")
         if review and review.revision_requests:
             targets = {r.file_id for r in review.revision_requests}
@@ -93,25 +94,30 @@ def build_graph(
         return {"file_summaries": out}
 
     def review_node(state: DiagnosticState) -> dict:
+        """Run review_summaries over the per-file outputs and capture any revision requests."""
         with node_span("review_summaries"):
             rev = review_summaries.run(provider=provider, file_summaries=state["file_summaries"])
         return {"summary_review": rev}
 
     def redo_router(state: DiagnosticState) -> str:
+        """Decide whether to redo per-file extraction (capped by redo_cap) or advance to synthesis."""
         rev = state.get("summary_review")
         if rev and rev.revision_requests and state.get("redo_count", 0) < redo_cap:
             return "redo"
         return "advance"
 
     def redo_inc(state: DiagnosticState) -> dict:
+        """Increment the redo counter — bounds the per-file redo loop."""
         return {"redo_count": state.get("redo_count", 0) + 1}
 
     def synthesis_node(state: DiagnosticState) -> dict:
+        """Synthesize per-file summaries into a cross-file IntakeBundle."""
         with node_span("synthesis"):
             bundle = synthesis.run(provider=provider, file_summaries=state["file_summaries"])
         return {"bundle": bundle}
 
     def workflow_map_node(state: DiagnosticState) -> dict:
+        """Map the bundle into structured WorkflowRecords."""
         b = state["bundle"]
         assert isinstance(b, IntakeBundle)
         with node_span("workflow_map"):
@@ -119,6 +125,7 @@ def build_graph(
         return {"workflows": wfs}
 
     def bottleneck_detect_node(state: DiagnosticState) -> dict:
+        """Detect Bottlenecks inside the mapped workflows using the bundle's pain signals."""
         b = state["bundle"]
         assert isinstance(b, IntakeBundle)
         with node_span("bottleneck_detect"):
@@ -126,6 +133,7 @@ def build_graph(
         return {"bottlenecks": bns}
 
     def roi_score_node(state: DiagnosticState) -> dict:
+        """Score each bottleneck as an automation Opportunity (pain, ROI, effort, risk)."""
         b = state["bundle"]
         assert isinstance(b, IntakeBundle)
         with node_span("roi_score"):
@@ -133,11 +141,13 @@ def build_graph(
         return {"opportunities": ops}
 
     def fastest_win_select_node(state: DiagnosticState) -> dict:
+        """Pick the single fastest-win Opportunity from the scored list."""
         with node_span("fastest_win_select"):
             sel = fastest_win_select.run(provider=provider, opportunities=state["opportunities"])
         return {"selected": sel}
 
     def solution_blueprint_node(state: DiagnosticState) -> dict:
+        """Produce the cited Blueprint; on a revision pass, feeds final_review.detail back in."""
         sel = state["selected"]
         if sel is None:
             return {"blueprint": None}
@@ -154,6 +164,7 @@ def build_graph(
         return {"blueprint": bp}
 
     def self_review_node(state: DiagnosticState) -> dict:
+        """Run self_review_final — deterministic citation existence/reachability gates plus LLM consistency check."""
         bp = state["blueprint"]
         if bp is None:
             return {"final_review": None}
@@ -171,6 +182,7 @@ def build_graph(
         return {"final_review": fr}
 
     def revise_router(state: DiagnosticState) -> str:
+        """Decide whether to revise the Blueprint (capped by revision_cap) or end the run."""
         fr = state.get("final_review")
         if fr is None or _final_review_ok(fr):
             return "end"
@@ -179,6 +191,7 @@ def build_graph(
         return "revise"
 
     def revise_inc(state: DiagnosticState) -> dict:
+        """Increment the revision counter — bounds the Blueprint revision loop."""
         return {"revision_count": state.get("revision_count", 0) + 1}
 
     # --- Graph wiring ---
@@ -218,6 +231,7 @@ def build_graph(
 
 
 def _final_review_ok(fr) -> bool:
+    """True only when all four FinalReview gate flags are green."""
     return (
         fr.citation_existence_ok
         and fr.citation_reachability_ok
