@@ -24,9 +24,12 @@ import {
   Blueprint,
   BlueprintClaim,
   FileRef,
+  RunEvent,
   RunResponse,
   createRun,
   getBlueprint,
+  getRun,
+  openRunEventSocket,
   uploadEvidenceFile,
 } from "@/lib/api";
 
@@ -36,6 +39,8 @@ type TimelineStep = {
   label: string;
   state: "done" | "active" | "waiting";
 };
+
+const TERMINAL_RUN_EVENT_TYPES = new Set(["run_completed", "run_failed"]);
 
 /** Format bytes into compact file sizes for the upload queue. */
 function formatBytes(size: number): string {
@@ -49,6 +54,44 @@ function toMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
   return "Unexpected frontend error.";
+}
+
+/** Keep the newest live events visible without letting the page grow forever. */
+function appendRunEvent(events: RunEvent[], event: RunEvent): RunEvent[] {
+  return [...events, event].slice(-30);
+}
+
+/** Resolve when the backend reports that the background run is finished. */
+function waitForRunCompletion(runId: string, onEvent: (event: RunEvent) => void): Promise<RunEvent> {
+  return new Promise((resolve, reject) => {
+    const socket = openRunEventSocket(runId);
+    let settled = false;
+
+    socket.onmessage = (message) => {
+      const event = JSON.parse(message.data) as RunEvent;
+      onEvent(event);
+      if (!TERMINAL_RUN_EVENT_TYPES.has(event.type)) return;
+
+      settled = true;
+      socket.close();
+      if (event.type === "run_failed") {
+        reject(new Error(event.message));
+      } else {
+        resolve(event);
+      }
+    };
+
+    socket.onerror = () => {
+      settled = true;
+      reject(new Error("Run event stream disconnected."));
+    };
+
+    socket.onclose = () => {
+      if (!settled) {
+        reject(new Error("Run event stream closed before the run completed."));
+      }
+    };
+  });
 }
 
 /** Choose timeline states from the current local workflow status. */
@@ -111,6 +154,7 @@ export function DiagnosticWorkspace() {
   const [blueprint, setBlueprint] = useState<Blueprint | null>(null);
   const [status, setStatus] = useState<WorkStatus>("idle");
   const [message, setMessage] = useState<string | null>(null);
+  const [runEvents, setRunEvents] = useState<RunEvent[]>([]);
 
   const timeline = useMemo(
     () => timelineFor(status, uploadedFiles, run),
@@ -131,6 +175,7 @@ export function DiagnosticWorkspace() {
     setMessage(null);
     setRun(null);
     setBlueprint(null);
+    setRunEvents([]);
 
     try {
       const refs: FileRef[] = [];
@@ -142,6 +187,12 @@ export function DiagnosticWorkspace() {
       setStatus("running");
       const createdRun = await createRun(refs.map((file) => file.file_id));
       setRun(createdRun);
+
+      await waitForRunCompletion(createdRun.run_id, (event) => {
+        setRunEvents((current) => appendRunEvent(current, event));
+      });
+      const latestRun = await getRun(createdRun.run_id);
+      setRun(latestRun);
 
       const finalBlueprint = await getBlueprint(createdRun.run_id);
       setBlueprint(finalBlueprint);
@@ -254,6 +305,47 @@ export function DiagnosticWorkspace() {
                   </div>
                 </div>
               ) : null}
+
+              <div className="mt-5 border-t border-slate-200 pt-4">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  Live events
+                </h3>
+                <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+                  {runEvents.length === 0 ? (
+                    <p className="text-sm text-slate-500">Run updates will stream here.</p>
+                  ) : (
+                    runEvents.map((event) => (
+                      <div
+                        className="grid grid-cols-[18px_1fr] gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+                        key={`${event.run_id}-${event.seq}`}
+                      >
+                        <span aria-hidden="true" className="pt-0.5">
+                          {event.level === "error"
+                            ? "❌"
+                            : event.level === "warning"
+                              ? "⚠️"
+                              : event.type === "run_completed"
+                                ? "✅"
+                                : "•"}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="truncate font-medium text-slate-800">
+                              {event.message}
+                            </span>
+                            <span className="shrink-0 rounded bg-white px-1.5 py-0.5 text-xs text-slate-500">
+                              {event.stage}
+                            </span>
+                          </div>
+                          <p className="mt-1 truncate font-mono text-xs text-slate-500">
+                            {event.type}
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           </section>
 

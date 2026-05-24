@@ -8,6 +8,7 @@
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
+const WS_BASE_URL = API_BASE_URL.replace(/^http/, "ws");
 
 export type ParserStatus = "ok" | "error" | "pending";
 
@@ -23,6 +24,19 @@ export type RunResponse = {
   run_id: string;
   status: string;
   langfuse_trace_id: string | null;
+};
+
+export type RunEventLevel = "debug" | "info" | "warning" | "error" | "critical";
+
+export type RunEvent = {
+  seq: number;
+  run_id: string;
+  type: string;
+  level: RunEventLevel;
+  stage: string;
+  message: string;
+  data: Record<string, unknown>;
+  timestamp: string;
 };
 
 export type Source = {
@@ -135,4 +149,9 @@ export async function getExcerpt(source: Source): Promise<string> {
   return response.text;
 }
 
-export { API_BASE_URL };
+/** Open a live WebSocket stream for run progress events. */
+export function openRunEventSocket(runId: string): WebSocket {
+  return new WebSocket(`${WS_BASE_URL}/api/runs/${runId}/events`);
+}
+
+export { API_BASE_URL, WS_BASE_URL };
