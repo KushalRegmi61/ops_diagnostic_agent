@@ -8,10 +8,12 @@ Sits at the top of the pipeline: HTTP -> services -> graph -> agents -> parsers.
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import models  # noqa: F401  (register tables with Base.metadata)
+from app.config import get_settings
 from app.database import Base, engine, get_db
 from app.parsers import csv as _p_csv
 from app.parsers import docx as _p_docx
@@ -43,6 +45,14 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Ops Diagnostic Agent", version="0.1.0", lifespan=lifespan)
+settings = get_settings()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.frontend_cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 _EXCERPT_MODULES = {

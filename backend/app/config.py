@@ -5,9 +5,10 @@ agents, parsers, providers) consults through the cached `get_settings()`
 accessor. Tests that mutate environment variables mid-suite must call
 `get_settings.cache_clear()` to re-read.
 """
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -17,6 +18,10 @@ class Settings(BaseSettings):
 
     database_url: str
     blob_store_dir: str
+    frontend_cors_origins: Annotated[list[str], NoDecode] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 
     llm_provider: Literal["ollama", "openai", "groq", "openai_compatible"] = "ollama"
 
@@ -54,6 +59,14 @@ class Settings(BaseSettings):
     # Run-time behavior
     auto_approve_review: bool = False
     per_file_iteration_cap: int = 6
+
+    @field_validator("frontend_cors_origins", mode="before")
+    @classmethod
+    def _parse_frontend_cors_origins(cls, value: object) -> object:
+        """Accept JSON-style lists or comma-separated env values for frontend origins."""
+        if isinstance(value, str):
+            return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
 
 
 def get_settings() -> Settings:

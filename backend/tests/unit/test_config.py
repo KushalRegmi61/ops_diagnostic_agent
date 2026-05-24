@@ -43,3 +43,13 @@ def test_settings_loads_redis_and_langfuse(monkeypatch):
     assert s.langfuse_public_key == "pk_test"
     assert s.langfuse_secret_key == "sk_test"
     assert s.langfuse_base_url.startswith("https://")
+
+
+def test_settings_loads_frontend_cors_origins(monkeypatch):
+    """Settings parses comma-separated frontend CORS origins for browser clients."""
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///./test.db")
+    monkeypatch.setenv("BLOB_STORE_DIR", "./test_blobs")
+    monkeypatch.setenv("FRONTEND_CORS_ORIGINS", "http://localhost:3000, http://127.0.0.1:3000")
+    s = Settings()
+    assert s.frontend_cors_origins == ["http://localhost:3000", "http://127.0.0.1:3000"]
