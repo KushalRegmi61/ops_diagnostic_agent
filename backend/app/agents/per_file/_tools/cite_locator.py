@@ -1,8 +1,15 @@
-"""cite_locator tool: enforce the citation round-trip invariant per Source.
+"""Tool for validating that a proposed source locator is real and reachable.
 
-A locator is only valid if the matching parser's ``excerpt()`` returns
-non-empty text for it. This tool is what keeps fabricated locators out of
-the FileSummary before the lead's ``self_review_final`` ever runs.
+The per-file agent must attach citations to workflows, pain signals, and lead
+rows. A citation uses a ``Source`` object, and the most important part of that
+Source is the ``locator``: page/span for PDFs, paragraph index for DOCX, row
+index for tables, JSON pointer for JSON, and so on.
+
+Before the model uses a locator as evidence, it should call ``cite_locator``.
+This tool dispatches to the matching parser's ``excerpt()`` function and checks
+whether the locator can be resolved back to non-empty source text. That keeps
+fabricated or malformed citations out of the FileSummary before later review
+stages run.
 """
 from app.parsers import csv as _p_csv
 from app.parsers import docx as _p_docx
@@ -24,7 +31,7 @@ _EXCERPT_BY_TYPE = {
 
 
 def cite_locator(parsed: ParsedFile, *, locator: dict) -> dict:
-    """Validate a locator by roundtripping it through the parser's excerpt(). Returns {text, valid}."""
+    """Return ``{text, valid}`` after round-tripping ``locator`` through the parser."""
     module = _EXCERPT_BY_TYPE.get(parsed.type)
     if module is None:
         return {"text": "", "valid": False}

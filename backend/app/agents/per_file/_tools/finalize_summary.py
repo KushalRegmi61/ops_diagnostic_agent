@@ -1,14 +1,20 @@
-"""finalize_summary tool: terminate the ReAct loop with a FileSummary.
+"""Tool for ending the per-file ReAct loop and returning the file summary.
 
-Returning a FileSummary from the dispatcher causes ``_react_loop`` to break
-out and hand the summary up to the lead's review_summaries / synthesis path.
+The extraction tools build up a mutable ``WorkingState`` during the loop:
+workflows, pain signals, lead rows, open questions, and notes. When the LLM has
+collected enough evidence, it calls ``finalize_summary`` with a concise
+one-paragraph summary and any unresolved questions.
+
+This tool freezes the working state into a ``FileSummary``. The ReAct loop
+recognizes that return type, stops iterating, and hands the summary to the
+lead-level review and synthesis agents.
 """
 from app.agents.per_file._state import WorkingState
 from app.schemas import FileSummary
 
 
 def finalize_summary(ws: WorkingState, *, one_paragraph_summary: str, open_questions: list[str] | None = None) -> FileSummary:
-    """Freeze the WorkingState into a FileSummary; ``open_questions`` overrides ws if provided."""
+    """Freeze accumulated findings into the ``FileSummary`` returned for one file."""
     return FileSummary(
         file_id=ws.file_id,
         file_name=ws.file_name,

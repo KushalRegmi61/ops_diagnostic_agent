@@ -1,7 +1,18 @@
-"""search_text tool: token-overlap + substring search over a ParsedFile.
+"""Tool for deterministic retrieval over a parsed file's segments.
 
-Cheap deterministic retrieval the ReAct agent uses to locate candidate
-segments before calling ``read_segment`` for full text.
+The LLM cannot see a large file all at once. Parsers first convert the file
+into ``ParsedFile.segments``; then the ReAct agent calls ``search_text`` with
+queries such as "manual follow-up", "missing owner", or "lead response delay".
+
+This tool scans every segment in the parsed file and ranks matches using a
+simple lexical score: word-token overlap plus exact substring presence. It
+returns candidate segments with their ``segment_index``, preview text, score,
+and locator. The agent normally follows a good hit with ``read_segment`` to see
+the full text before extracting anything.
+
+This is intentionally cheap and deterministic. It is not semantic search and
+does not require embeddings, so it is fast and testable but may miss evidence
+that uses very different wording from the query.
 """
 import re
 
@@ -25,9 +36,10 @@ def _score(segment_text: str, query: str) -> float:
 
 
 def search_text(parsed: ParsedFile, *, query: str, top_k: int = 3) -> list[dict]:
-    """Token-overlap + substring scoring over a single ParsedFile.
+    """Return the top matching segments for ``query``.
 
-    Returns the top_k hits as dicts: {segment_index, score, text, locator}.
+    Each hit has ``segment_index`` for follow-up reads, ``score`` for ranking,
+    ``text`` for quick inspection, and ``locator`` for later citation.
     """
     scored = [
         {
