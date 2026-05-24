@@ -21,6 +21,7 @@ dependencies = [
   "langgraph-checkpoint-redis>=0.0.6",
   "redis>=5.0",
   "langfuse>=2.50",
+  "structlog>=24.4",
 ]
 
 [project.optional-dependencies]

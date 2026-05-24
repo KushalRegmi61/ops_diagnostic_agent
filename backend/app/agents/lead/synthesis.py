@@ -5,24 +5,55 @@ downstream five-node diagnostic chain (workflows, pain signals, lead rows,
 contradictions, file_index, extraction_errors).
 """
 import json
+import time
 
+from app.agents.lead._logging import llm_meta_fields
 from app.llm.base import LLMProvider
 from app.prompts.synthesis import PROMPT
 from app.schemas import FileSummary, IntakeBundle
+from app.structured_logging import get_logger
+
+
+logger = get_logger(__name__)
 
 
 def run(*, provider: LLMProvider, file_summaries: dict[str, FileSummary]) -> IntakeBundle:
     """Cross-file synthesis via one LLM call; returns an empty bundle on parse failure."""
+    started = time.perf_counter()
+    logger.info("agent.lead.started", agent="synthesis", file_summary_count=len(file_summaries))
     summaries_json = json.dumps(
         {fid: fs.model_dump() for fid, fs in file_summaries.items()}, indent=2,
     )
     prompt = PROMPT.format(summaries_json=summaries_json)
-    result, _meta = provider.generate_json(
+    result, meta = provider.generate_json(
         prompt_name="cross_file_synthesis", prompt=prompt, schema=IntakeBundle,
     )
     if not result:
-        return IntakeBundle(
+        bundle = IntakeBundle(
             workflows=[], pain_signals=[], lead_rows=[],
             contradictions=[], file_index=[], extraction_errors=[],
         )
-    return IntakeBundle.model_validate(result)
+        logger.warning(
+            "agent.lead.completed",
+            agent="synthesis",
+            fallback="empty_bundle",
+            workflow_count=0,
+            pain_signal_count=0,
+            lead_row_count=0,
+            elapsed_ms=round((time.perf_counter() - started) * 1000),
+            **llm_meta_fields(meta),
+        )
+        return bundle
+    bundle = IntakeBundle.model_validate(result)
+    logger.info(
+        "agent.lead.completed",
+        agent="synthesis",
+        workflow_count=len(bundle.workflows),
+        pain_signal_count=len(bundle.pain_signals),
+        lead_row_count=len(bundle.lead_rows),
+        contradiction_count=len(bundle.contradictions),
+        extraction_error_count=len(bundle.extraction_errors),
+        elapsed_ms=round((time.perf_counter() - started) * 1000),
+        **llm_meta_fields(meta),
+    )
+    return bundle

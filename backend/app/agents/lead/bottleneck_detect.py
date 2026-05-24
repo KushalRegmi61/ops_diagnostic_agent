@@ -5,12 +5,18 @@ Second step of the five-node diagnostic chain. Consumes the workflows from
 contradictions) and returns a list of Bottleneck objects with cited sources.
 """
 import json
+import time
 
 from pydantic import BaseModel
 
+from app.agents.lead._logging import llm_meta_fields
 from app.llm.base import LLMProvider
 from app.prompts.bottleneck_detect import PROMPT
 from app.schemas import Bottleneck, IntakeBundle, WorkflowRecord
+from app.structured_logging import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class _Wrap(BaseModel):
@@ -20,9 +26,24 @@ class _Wrap(BaseModel):
 
 def run(*, provider: LLMProvider, bundle: IntakeBundle, workflows: list[WorkflowRecord]) -> list[Bottleneck]:
     """Detect bottlenecks via one LLM call; returns an empty list on parse failure."""
+    started = time.perf_counter()
+    logger.info(
+        "agent.lead.started",
+        agent="bottleneck_detect",
+        workflow_count=len(workflows),
+        pain_signal_count=len(bundle.pain_signals),
+    )
     prompt = PROMPT.format(
         workflows_json=json.dumps([w.model_dump() for w in workflows], indent=2),
         bundle_json=json.dumps(bundle.model_dump(), indent=2),
     )
-    result, _ = provider.generate_json(prompt_name="bottleneck_detect", prompt=prompt, schema=_Wrap)
-    return _Wrap.model_validate(result).bottlenecks if result else []
+    result, meta = provider.generate_json(prompt_name="bottleneck_detect", prompt=prompt, schema=_Wrap)
+    bottlenecks = _Wrap.model_validate(result).bottlenecks if result else []
+    logger.info(
+        "agent.lead.completed",
+        agent="bottleneck_detect",
+        bottleneck_count=len(bottlenecks),
+        elapsed_ms=round((time.perf_counter() - started) * 1000),
+        **llm_meta_fields(meta),
+    )
+    return bottlenecks

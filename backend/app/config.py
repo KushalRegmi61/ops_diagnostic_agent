@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     # Run-time behavior
     auto_approve_review: bool = False
     per_file_iteration_cap: int = 6
+    log_level: str = "INFO"
+    log_format: Literal["console", "json"] = "console"
 
     @field_validator("frontend_cors_origins", mode="before")
     @classmethod
