@@ -10,11 +10,12 @@ types on read, so node code keeps seeing the model classes it expects.
 
 Import this module once at process start (we do it from app.graph).
 """
+
 from typing import Any
 
 from pydantic import BaseModel
 
-from langgraph.checkpoint.redis.base import JsonPlusRedisSerializer
+from langgraph.checkpoint.redis.jsonplus_redis import JsonPlusRedisSerializer
 
 
 _ORIGINAL = JsonPlusRedisSerializer._default_handler
