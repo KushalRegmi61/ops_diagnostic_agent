@@ -9,9 +9,9 @@ from app.llm.base import LLMProvider
 from app.schemas import FileSummary, ParsedFile
 
 _SUFFIX = (
-    "This file is a meeting transcript (VTT or SRT). Likely contents: "
-    "founder/CSR discovery calls describing operational pain. "
-    "Locators carry timestamps: {type: 'transcript', line_start, line_end, ts_start, ts_end}."
+    "Transcript: likely discovery-call pain, roles, handoffs, and quotes. "
+    "Prioritize speaker-stated problems and timestamps. "
+    "Locator: {type: 'transcript', line_start, line_end, ts_start, ts_end}."
 )
 
 

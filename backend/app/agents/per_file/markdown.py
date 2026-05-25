@@ -9,9 +9,9 @@ from app.llm.base import LLMProvider
 from app.schemas import FileSummary, ParsedFile
 
 _SUFFIX = (
-    "This file is a Markdown or plain-text notes file. Likely contents: "
-    "meeting notes, discovery-call summaries, internal memos. "
-    "Locators are {type: 'text', line_start, line_end}."
+    "Markdown/text: likely notes, call summaries, or memos. "
+    "Prioritize explicit pains, workflows, decisions, and open questions. "
+    "Locator: {type: 'text', line_start, line_end}."
 )
 
 

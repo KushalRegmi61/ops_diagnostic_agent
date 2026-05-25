@@ -9,8 +9,9 @@ from app.llm.base import LLMProvider
 from app.schemas import FileSummary, ParsedFile
 
 _SUFFIX = (
-    "This file is a Word DOCX. Likely contents: SOPs, onboarding docs, internal policies. "
-    "Locators are {type: 'docx', paragraph_index, span_start, span_end}."
+    "DOCX: likely SOP, onboarding, or policy evidence. "
+    "Prioritize ordered procedures, roles, systems, and manual touchpoints. "
+    "Locator: {type: 'docx', paragraph_index, span_start, span_end}."
 )
 
 

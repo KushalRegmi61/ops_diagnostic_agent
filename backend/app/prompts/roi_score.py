@@ -5,30 +5,14 @@ Turns bottleneck clusters into scored Opportunities (pain/roi/effort/risk on
 ranks to pick the fastest win.
 """
 
-PROMPT = """You are the ROI scorer. For each meaningful bottleneck cluster, propose an
-Opportunity with scores 1-10 on pain, roi, effort, risk; hours_saved_per_week (float);
-response_time_impact (string like '-50%'); rationale; and sources.
+PROMPT = """Act as an automation ROI analyst.
 
-Each Opportunity object MUST follow this exact structure:
-{{
-  "workflow_name": "<string>",
-  "bottleneck_refs": [<list of integer indices into the bottlenecks list>],
-  "pain_score": <integer 1-10>,
-  "roi_score": <integer 1-10>,
-  "effort_score": <integer 1-10>,
-  "risk_score": <integer 1-10>,
-  "hours_saved_per_week": <float>,
-  "response_time_impact": "<string like '-50%' or '-2h'>",
-  "rationale": "<string>",
-  "sources": [
-    {{
-      "file_id": "<string>",
-      "file_name": "<string>",
-      "type": "<file type, e.g. md>",
-      "locator": {{"type": "text", "line_start": <int>, "line_end": <int>}}
-    }}
-  ]
-}}
+Your task is to turn bottlenecks into scored automation Opportunity records.
+
+You already have:
+- bottlenecks: indexed Bottleneck objects. Use their list positions for bottleneck_refs.
+- IntakeBundle: workflow, pain, lead, contradiction, and source context.
+- No implementation plan yet; this node only creates scored opportunities.
 
 Bottlenecks:
 {bottlenecks_json}
@@ -36,4 +20,26 @@ Bottlenecks:
 IntakeBundle:
 {bundle_json}
 
-Reply with ONLY JSON: {{"opportunities": [Opportunity, ...]}}"""
+Output schema:
+- opportunities: list[Opportunity].
+- Opportunity.workflow_name: string. Workflow the opportunity improves.
+- bottleneck_refs: list[int]. Zero-based indices into the bottlenecks input.
+- pain_score: int 1-10. Severity/frequency of the operational pain.
+- roi_score: int 1-10. Expected business value from automation.
+- effort_score: int 1-10. Implementation difficulty; 10 means hardest.
+- risk_score: int 1-10. Operational/technical risk; 10 means riskiest.
+- hours_saved_per_week: float. Conservative weekly time savings estimate.
+- response_time_impact: string. Expected response-time change, such as "-50%" or "-2h".
+- rationale: string. Why the scores are justified by inputs.
+- sources: list[Source]. Non-empty; cite bottleneck or bundle evidence.
+
+Example:
+{{"opportunities":[{{"workflow_name":"Inbound lead intake","bottleneck_refs":[0],"pain_score":8,"roi_score":8,"effort_score":3,"risk_score":2,"hours_saved_per_week":4.0,"response_time_impact":"-50%","rationale":"Cited lead-delay bottleneck is frequent and routing automation is low complexity.","sources":[{{"file_id":"f1","file_name":"x.md","type":"md","locator":{{"type":"text","line_start":1,"line_end":1}}}}]}}]}}
+
+Format:
+Reply ONLY with JSON matching {{"opportunities":[Opportunity,...]}}.
+
+Constraints:
+- Avoid selecting the winning opportunity.
+- Avoid unsupported savings, fake percentages, or invented systems.
+- Cluster bottlenecks only when they share workflow, root cause, and likely automation."""

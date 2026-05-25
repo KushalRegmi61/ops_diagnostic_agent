@@ -9,9 +9,9 @@ from app.llm.base import LLMProvider
 from app.schemas import FileSummary, ParsedFile
 
 _SUFFIX = (
-    "This file is a JSON export (CRM dump or similar). Segments are leaf values "
-    "with RFC 6901 pointer locators: {type: 'json', pointer}. Treat each contact/lead "
-    "object as a lead_row by reconstructing it from leaf segments under the same prefix."
+    "JSON: likely CRM/export leaves. "
+    "Prioritize reconstructing lead/contact objects from sibling pointers. "
+    "Locator: {type: 'json', pointer}."
 )
 
 

@@ -1,8 +1,8 @@
 """Per-file ReAct agent for tabular files (CSV and XLSX).
 
-Prompt suffix steers the agent toward extracting one ``lead_row`` per data row
-and emitting pain signals for stalled stages; supports both flat CSV and
-sheet-scoped XLSX locators.
+Prompt suffix steers the agent toward extracting diagnostically useful
+``lead_row`` records and emitting pain signals for stalled stages; supports
+both flat CSV and sheet-scoped XLSX locators.
 """
 from app.agents.per_file._react_loop import run_react_loop
 from app.config import get_settings
@@ -10,10 +10,9 @@ from app.llm.base import LLMProvider
 from app.schemas import FileSummary, ParsedFile
 
 _SUFFIX = (
-    "This file is a TABLE (CSV or XLSX). Likely contents: a lead list with stage and timing. "
-    "For EVERY row, call extract_lead_row with {raw, normalized, source}. "
-    "Locators: {type: 'table', row_index} for CSV, {type: 'xlsx', sheet, row_index} for XLSX. "
-    "Also emit key_pain_signals for stages where rows have stalled (e.g. days_in_stage > 14)."
+    "Table: likely lead/opportunity rows with status or timing. "
+    "Prioritize stalled, missing-owner, high-value, or representative rows. "
+    "Locators: CSV {type: 'table', row_index}; XLSX {type: 'xlsx', sheet, row_index}."
 )
 
 

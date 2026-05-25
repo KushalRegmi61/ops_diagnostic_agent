@@ -43,7 +43,7 @@ def run(
         bundle_json=json.dumps(bundle.model_dump(), indent=2),
     )
     if revision_detail:
-        prompt += f"\n\nThe previous blueprint failed self-review: {revision_detail}. Fix it."
+        prompt += f"\n\nRevision note: fix this self-review failure while preserving the Blueprint schema: {revision_detail}"
     result, meta = provider.generate_json(prompt_name="solution_blueprint", prompt=prompt, schema=Blueprint)
     blueprint = Blueprint.model_validate(result) if result else None
     logger.info(

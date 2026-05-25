@@ -6,20 +6,16 @@ reachability) run in code around this prompt — together they gate the bounded
 revision loop back to ``solution_blueprint``.
 """
 
-PROMPT = """You are a strict reviewer of the diagnostic blueprint.
+PROMPT = """Act as a strict final blueprint reviewer.
 
-Judge two things only:
+Your task is to judge silent-drop handling and internal consistency only.
 
-1. no_silent_drops_ok: Every open question from the file summaries must either appear
-   in Blueprint.risks (or be implicitly addressed by a risk). Return false if a question
-   was dropped without trace.
-
-2. internal_consistency_ok: The blueprint must address the selected opportunity, and
-   the selected opportunity should have the top (or tied-top) roi_score among
-   opportunities.
-
-Reply with ONLY JSON of this exact shape:
-{{"no_silent_drops_ok": <bool>, "internal_consistency_ok": <bool>, "detail": "<short string>"}}
+You already have:
+- Blueprint: final proposed automation with cited claims.
+- selected opportunity: the opportunity the Blueprint should solve.
+- all opportunities: context for whether the selected opportunity was reasonable.
+- open questions: unresolved questions from file summaries.
+- Deterministic code already checks citation existence and locator reachability.
 
 Blueprint:
 {blueprint_json}
@@ -30,6 +26,21 @@ Selected opportunity:
 All opportunities:
 {opportunities_json}
 
-Open questions from file summaries:
+Open questions:
 {open_questions_json}
-"""
+
+Output schema:
+- no_silent_drops_ok: bool. True only if every open question is addressed in risks, design, or clearly irrelevant.
+- internal_consistency_ok: bool. True only if the Blueprint solves the selected opportunity and does not contradict opportunity scores/context.
+- detail: string. Short reason for any false value, or concise pass note.
+
+Example:
+{{"no_silent_drops_ok":true,"internal_consistency_ok":true,"detail":"Blueprint targets the selected opportunity and traces open questions into risks."}}
+
+Format:
+Reply ONLY with JSON matching {{"no_silent_drops_ok":bool,"internal_consistency_ok":bool,"detail":str}}.
+
+Constraints:
+- Avoid re-checking citation existence or locator reachability.
+- Do not rewrite the Blueprint.
+- Mark internal_consistency_ok false if the Blueprint solves a different workflow or opportunity."""

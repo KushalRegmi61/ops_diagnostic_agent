@@ -9,9 +9,9 @@ from app.llm.base import LLMProvider
 from app.schemas import FileSummary, ParsedFile
 
 _SUFFIX = (
-    "This file is an MBOX email export. Each segment is one message body. "
-    "Treat each message as a potential lead — call extract_lead_row if it is one. "
-    "Locators are {type: 'mbox', message_id, section}."
+    "MBOX: each segment is one email body. "
+    "Prioritize quote requests, lead intent, missing follow-up, and handoffs. "
+    "Locator: {type: 'mbox', message_id, section}."
 )
 
 

@@ -9,9 +9,9 @@ from app.llm.base import LLMProvider
 from app.schemas import FileSummary, ParsedFile
 
 _SUFFIX = (
-    "This file is a PDF. Likely contents: SOPs, training docs, policy summaries, "
-    "or declaration pages. Look for stepwise procedures and named systems (e.g. Applied Epic, HubSpot). "
-    "PDFs are paginated — locators are {type: 'pdf', page, span_start, span_end}."
+    "PDF: likely SOP, policy, training, or declaration evidence. "
+    "Prioritize stepwise workflows and named systems. "
+    "Locator: {type: 'pdf', page, span_start, span_end}."
 )
 
 

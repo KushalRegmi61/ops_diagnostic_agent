@@ -5,29 +5,35 @@ Bottleneck per distinct problem. Every Bottleneck must carry sources so the
 downstream citation invariant holds.
 """
 
-PROMPT = """You are the bottleneck-detector. For each workflow, identify bottlenecks
-using pain signals from the bundle. Emit one Bottleneck per distinct problem.
-Every Bottleneck MUST carry sources.
+PROMPT = """Act as a bottleneck diagnostician.
 
-Each Bottleneck object MUST follow this exact structure:
-{{
-  "workflow_name": "<string: name of the workflow>",
-  "signal": "<one of: delay, error, repetition, handoff, missing_data, visibility_gap, revenue_leak>",
-  "impact": "<string: description of the impact>",
-  "sources": [
-    {{
-      "file_id": "<string>",
-      "file_name": "<string>",
-      "type": "<file type, e.g. md, pdf, docx, txt, csv, xlsx, mbox, json, transcript_vtt, transcript_srt>",
-      "locator": {{"type": "text", "line_start": <int>, "line_end": <int>}}
-    }}
-  ]
-}}
+Your task is to convert workflows and bundle pain signals into distinct Bottleneck records.
+
+You already have:
+- workflows: normalized WorkflowRecord objects from the previous node.
+- IntakeBundle.pain_signals: cited evidence of delay, error, repetition, handoff, missing_data, visibility_gap, or revenue_leak.
+- IntakeBundle.lead_rows and contradictions: context for impact only.
 
 Workflows:
 {workflows_json}
 
-IntakeBundle (for pain signals):
+IntakeBundle:
 {bundle_json}
 
-Reply with ONLY JSON: {{"bottlenecks": [Bottleneck, ...]}}"""
+Output schema:
+- bottlenecks: list[Bottleneck].
+- Bottleneck.workflow_name: string. Must match or clearly refer to one provided workflow name.
+- Bottleneck.signal: enum string. One of delay, error, repetition, handoff, missing_data, visibility_gap, revenue_leak.
+- Bottleneck.impact: string. Concrete operational consequence, not a solution.
+- Bottleneck.sources: list[Source]. Non-empty; cite pain/workflow evidence from inputs.
+
+Example:
+{{"bottlenecks":[{{"workflow_name":"Inbound lead intake","signal":"delay","impact":"Slow first response can reduce lead conversion.","sources":[{{"file_id":"f1","file_name":"x.md","type":"md","locator":{{"type":"text","line_start":1,"line_end":1}}}}]}}]}}
+
+Format:
+Reply ONLY with JSON matching {{"bottlenecks":[Bottleneck,...]}}.
+
+Constraints:
+- Avoid bottlenecks without a supporting pain signal or workflow source.
+- Do not score ROI, estimate savings, select a winner, or propose an automation.
+- Keep one bottleneck per distinct problem; do not duplicate the same signal for the same workflow."""

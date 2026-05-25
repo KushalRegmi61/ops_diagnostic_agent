@@ -29,8 +29,25 @@ class _ToolReply(BaseModel):
     args: dict
 
 
+def _clip(value: str, max_chars: int = 90) -> str:
+    """Return a compact single-line preview for prompt recaps."""
+    text = " ".join(value.split())
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 1].rstrip() + "..."
+
+
+def _compact_json(value: Any, max_chars: int = 160) -> str:
+    """Serialize prompt context compactly, with a stable fallback."""
+    try:
+        text = json.dumps(value, ensure_ascii=True, sort_keys=True)
+    except TypeError:
+        text = str(value)
+    return _clip(text, max_chars=max_chars)
+
+
 def _state_recap(ws: WorkingState) -> str:
-    """Render a one-line snapshot of the WorkingState counters for the next prompt."""
+    """Render a compact WorkingState snapshot for the next prompt."""
     parts = [
         f"iter={ws.iteration}",
         f"workflows={len(ws.workflows)}",
@@ -38,6 +55,15 @@ def _state_recap(ws: WorkingState) -> str:
         f"lead_rows={len(ws.lead_rows)}",
         f"open_questions={len(ws.open_questions)}",
     ]
+    if ws.workflows:
+        names = ", ".join(_clip(wf.name, 40) for wf in ws.workflows[-3:])
+        parts.append(f"recent_workflows=[{names}]")
+    if ws.pain_signals:
+        signals = ", ".join(_clip(ps.text, 55) for ps in ws.pain_signals[-3:])
+        parts.append(f"recent_pain_signals=[{signals}]")
+    if ws.lead_rows:
+        rows = ", ".join(_compact_json(lr.normalized, 70) for lr in ws.lead_rows[-3:])
+        parts.append(f"recent_lead_rows=[{rows}]")
     return " | ".join(parts)
 
 
@@ -45,11 +71,34 @@ def _segment_index_recap(parsed: ParsedFile, max_segments: int = 12) -> str:
     """Show the model the segment table so it can pick indices for read_segment."""
     lines: list[str] = []
     for i, seg in enumerate(parsed.segments[:max_segments]):
-        preview = seg.text[:80].replace("\n", " ")
-        lines.append(f"[{i}] {preview}")
+        preview = _clip(seg.text, 80)
+        locator = _compact_json(seg.locator, 130)
+        lines.append(f"[{i}] locator={locator} text={preview}")
     if len(parsed.segments) > max_segments:
         lines.append(f"... +{len(parsed.segments) - max_segments} more segments")
     return "\n".join(lines)
+
+
+def _validated_source_recap(sources: list[dict], max_sources: int = 5) -> str:
+    """Render recently validated source candidates for the next prompt."""
+    if not sources:
+        return "None yet. Call cite_locator before attaching any source."
+    lines: list[str] = []
+    for src in sources[-max_sources:]:
+        source = src["source"]
+        excerpt = _clip(src.get("text", ""), 110)
+        lines.append(f"- source={_compact_json(source, 180)} excerpt={excerpt}")
+    return "\n".join(lines)
+
+
+def _source_from_locator(parsed: ParsedFile, locator: dict) -> dict:
+    """Build the Source-shaped dict the LLM can reuse after locator validation."""
+    return {
+        "file_id": parsed.file_id,
+        "file_name": parsed.file_name,
+        "type": parsed.type,
+        "locator": locator,
+    }
 
 
 def run_react_loop(
@@ -70,7 +119,14 @@ def run_react_loop(
     ws = WorkingState(file_id=parsed.file_id, file_name=parsed.file_name)
     history: list[str] = []
 
-    brief = render_brief(iteration_cap=iteration_cap)
+    brief = render_brief(
+        file_id=parsed.file_id,
+        file_name=parsed.file_name,
+        file_type=parsed.type,
+        segment_count=len(parsed.segments),
+        iteration_cap=iteration_cap,
+    )
+    validated_sources: list[dict] = []
     logger.info(
         "agent.per_file.started",
         file_id=parsed.file_id,
@@ -84,11 +140,13 @@ def run_react_loop(
         ws.iteration = it
         prompt = (
             brief
-            + "\n\n"
-            + prompt_suffix
-            + "\n\nSegment index (first lines shown for picking read_segment indices):\n"
+            + "\n\nFile-type guidance:\n"
+            + (prompt_suffix or "No additional file-type guidance.")
+            + "\n\nSegment index (locator previews and first text shown for picking read_segment indices):\n"
             + _segment_index_recap(parsed)
             + f"\n\nCurrent working state: {_state_recap(ws)}"
+            + "\n\nValidated source candidates:\n"
+            + _validated_source_recap(validated_sources)
             + ("\n\nRecent tool history:\n" + "\n".join(history[-4:]) if history else "")
             + '\n\nReply with ONLY one JSON object: {"tool": "<name>", "args": {...}}'
         )
@@ -190,6 +248,16 @@ def run_react_loop(
                 elapsed_ms=round((time.perf_counter() - started) * 1000),
             )
             return result  # FileSummary
+
+        if call.tool == "cite_locator" and isinstance(result, dict) and result.get("valid") is True:
+            locator = call.args.get("locator")
+            if isinstance(locator, dict):
+                validated_sources.append(
+                    {
+                        "source": _source_from_locator(parsed, locator),
+                        "text": result.get("text", ""),
+                    }
+                )
 
         history.append(f"{call.tool}({json.dumps(call.args)[:120]}) -> {str(result)[:120]}")
         logger.info(
