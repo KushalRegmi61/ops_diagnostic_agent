@@ -12,7 +12,7 @@ import time
 from pydantic import BaseModel
 
 from app.agents.lead._logging import llm_meta_fields
-from app.llm.base import LLMProvider
+from app.llm.base import LLMParseError, LLMProvider
 from app.parsers import excerpt as parser_excerpt
 from app.prompts.self_review_final import PROMPT
 from app.schemas import (
@@ -113,16 +113,13 @@ def run(
         open_questions_json=json.dumps(open_questions, indent=2),
     )
     result, meta = provider.generate_json(prompt_name="self_review_final", prompt=prompt, schema=_Judgment)
-    if result:
-        judgment = _Judgment.model_validate(result)
-        fallback = None
-    else:
-        judgment = _Judgment(
-            no_silent_drops_ok=True,
-            internal_consistency_ok=True,
-            detail="LLM judgment unavailable; deterministic checks only",
+    if not meta.parsed_json:
+        raise LLMParseError(
+            stage="self_review_final",
+            message=f"provider returned parsed_json=False after {meta.retry_count} retries",
         )
-        fallback = "deterministic_checks_only"
+    judgment = _Judgment.model_validate(result)
+    fallback = None
 
     detail_parts: list[str] = [judgment.detail]
     if bad_exist:

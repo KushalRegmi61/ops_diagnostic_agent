@@ -9,7 +9,7 @@ import json
 import time
 
 from app.agents.lead._logging import llm_meta_fields
-from app.llm.base import LLMProvider
+from app.llm.base import LLMParseError, LLMProvider
 from app.prompts.review_summaries import PROMPT
 from app.schemas import FileSummary, SummaryReview
 from app.structured_logging import get_logger
@@ -29,17 +29,11 @@ def run(*, provider: LLMProvider, file_summaries: dict[str, FileSummary]) -> Sum
     result, meta = provider.generate_json(
         prompt_name="review_summaries", prompt=prompt, schema=SummaryReview,
     )
-    if not result:
-        review = SummaryReview(revision_requests=[], notes="(reviewer failed to produce valid JSON — skipping redo)")
-        logger.warning(
-            "agent.lead.completed",
-            agent="review_summaries",
-            revision_request_count=0,
-            fallback="skip_redo",
-            elapsed_ms=round((time.perf_counter() - started) * 1000),
-            **llm_meta_fields(meta),
+    if not meta.parsed_json:
+        raise LLMParseError(
+            stage="review_summaries",
+            message=f"provider returned parsed_json=False after {meta.retry_count} retries",
         )
-        return review
     review = SummaryReview.model_validate(result)
     logger.info(
         "agent.lead.completed",

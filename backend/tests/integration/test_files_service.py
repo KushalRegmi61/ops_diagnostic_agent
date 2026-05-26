@@ -1,6 +1,7 @@
 """services.files.upload_file against the real DB, blob store, and parsers."""
 from pathlib import Path
 
+from app.config import get_settings
 from app.database import Base, SessionLocal, engine
 from app.models import FileRecord
 from app.services.files import upload_file
@@ -14,7 +15,8 @@ def setup_module():
 
 def test_upload_file_persists_record_and_parses(tmp_path, monkeypatch):
     """upload_file persists a FileRecord and parses the bytes to status=ok."""
-    monkeypatch.setattr("app.blob_store.BLOB_DIR", tmp_path)
+    monkeypatch.setenv("BLOB_STORE_DIR", str(tmp_path))
+    get_settings.cache_clear()
     fixture = Path(__file__).parent.parent / "fixtures" / "notes.md"
     content = fixture.read_bytes()
 
@@ -32,7 +34,8 @@ def test_upload_file_persists_record_and_parses(tmp_path, monkeypatch):
 
 def test_upload_file_marks_error_for_unknown_mime(tmp_path, monkeypatch):
     """upload_file records parser_status=error for unsupported mime types."""
-    monkeypatch.setattr("app.blob_store.BLOB_DIR", tmp_path)
+    monkeypatch.setenv("BLOB_STORE_DIR", str(tmp_path))
+    get_settings.cache_clear()
     with SessionLocal() as s:
         ref = upload_file(s, file_name="thing.bin", mime_type="application/octet-stream", content=b"\x00\x01")
         s.commit()

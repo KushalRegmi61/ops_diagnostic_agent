@@ -1,32 +1,42 @@
-"""ReAct loop shared by every per-file agent.
+"""LangGraph tool loop shared by every per-file agent.
 
-Drives the think -> act -> observe cycle: each iteration the provider is asked
-for a single ``{tool, args}`` JSON object, the dispatcher in ``_router.py``
-runs the tool, and the result is folded into the WorkingState. The loop ends
-either when the model calls ``finalize_summary`` (returning a FileSummary) or
-when ``iteration_cap`` is reached (a partial FileSummary with a caveat).
+Drives a compact model -> tool -> model graph over file-local StructuredTools.
+The graph ends when the model calls ``finalize_summary`` or falls back to a
+partial FileSummary when the agent stops, errors, or reaches its step cap.
 """
 import json
+import os
+import re
 import time
-from typing import Any
+from typing import Annotated, Any, TypedDict
 
-from pydantic import BaseModel
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.errors import GraphRecursionError
+from langgraph.graph import END, StateGraph
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
 
-from app.agents.per_file._router import ToolCall, dispatch
+from app.agents.per_file._router import build_tools
 from app.agents.per_file._state import WorkingState
-from app.llm.base import LLMProvider
+from app.llm.base import LLMParseError, LLMProvider
+from app.observability import langchain_config
 from app.prompts.per_file_brief import render_brief
 from app.schemas import FileSummary, ParsedFile
 from app.structured_logging import get_logger
 
 
 logger = get_logger(__name__)
+DEFAULT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "12"))
+FILE_NAME_PATTERN = re.compile(r"([A-Za-z0-9][A-Za-z0-9_\- ]{0,200}\.[A-Za-z0-9]{1,8})")
 
 
-class _ToolReply(BaseModel):
-    """Schema the LLM must produce each iteration."""
-    tool: str
-    args: dict
+class _PerFileGraphState(TypedDict, total=False):
+    """Internal LangGraph state for a single per-file extraction."""
+
+    messages: Annotated[list[BaseMessage], add_messages]
+    final_summary: FileSummary | None
+    fallback_reason: str | None
 
 
 def _clip(value: str, max_chars: int = 90) -> str:
@@ -76,29 +86,7 @@ def _segment_index_recap(parsed: ParsedFile, max_segments: int = 12) -> str:
         lines.append(f"[{i}] locator={locator} text={preview}")
     if len(parsed.segments) > max_segments:
         lines.append(f"... +{len(parsed.segments) - max_segments} more segments")
-    return "\n".join(lines)
-
-
-def _validated_source_recap(sources: list[dict], max_sources: int = 5) -> str:
-    """Render recently validated source candidates for the next prompt."""
-    if not sources:
-        return "None yet. Call cite_locator before attaching any source."
-    lines: list[str] = []
-    for src in sources[-max_sources:]:
-        source = src["source"]
-        excerpt = _clip(src.get("text", ""), 110)
-        lines.append(f"- source={_compact_json(source, 180)} excerpt={excerpt}")
-    return "\n".join(lines)
-
-
-def _source_from_locator(parsed: ParsedFile, locator: dict) -> dict:
-    """Build the Source-shaped dict the LLM can reuse after locator validation."""
-    return {
-        "file_id": parsed.file_id,
-        "file_name": parsed.file_name,
-        "type": parsed.type,
-        "locator": locator,
-    }
+    return "\n".join(lines) if lines else "No parsed segments available."
 
 
 def run_react_loop(
@@ -108,16 +96,12 @@ def run_react_loop(
     prompt_suffix: str = "",
     iteration_cap: int = 6,
     on_tool_call: Any = None,  # optional callback(name, args, result) for Langfuse
+    run_id: str | None = None,
+    trace_name: str | None = None,
 ) -> FileSummary:
-    """Run the ReAct loop until finalize_summary is called or iteration_cap is hit.
-
-    Returns the FileSummary built from the working state. If the cap is hit
-    before finalize_summary, a fallback FileSummary is emitted with a caveat
-    in agent_notes.
-    """
+    """Run an explicit LangGraph tool-calling loop until finalize_summary or fallback."""
     started = time.perf_counter()
     ws = WorkingState(file_id=parsed.file_id, file_name=parsed.file_name)
-    history: list[str] = []
 
     brief = render_brief(
         file_id=parsed.file_id,
@@ -126,7 +110,6 @@ def run_react_loop(
         segment_count=len(parsed.segments),
         iteration_cap=iteration_cap,
     )
-    validated_sources: list[dict] = []
     logger.info(
         "agent.per_file.started",
         file_id=parsed.file_id,
@@ -134,150 +117,267 @@ def run_react_loop(
         file_type=parsed.type,
         segment_count=len(parsed.segments),
         iteration_cap=iteration_cap,
+        agent_max_steps=DEFAULT_MAX_STEPS,
+        run_id=run_id,
+        trace_name=trace_name,
     )
 
-    for it in range(iteration_cap):
-        ws.iteration = it
-        prompt = (
-            brief
-            + "\n\nFile-type guidance:\n"
-            + (prompt_suffix or "No additional file-type guidance.")
-            + "\n\nSegment index (locator previews and first text shown for picking read_segment indices):\n"
-            + _segment_index_recap(parsed)
-            + f"\n\nCurrent working state: {_state_recap(ws)}"
-            + "\n\nValidated source candidates:\n"
-            + _validated_source_recap(validated_sources)
-            + ("\n\nRecent tool history:\n" + "\n".join(history[-4:]) if history else "")
-            + '\n\nReply with ONLY one JSON object: {"tool": "<name>", "args": {...}}'
-        )
-
-        iteration_started = time.perf_counter()
-        logger.debug(
-            "agent.per_file.iteration.started",
+    tools = list(build_tools(parsed, ws, agent_mode=True).values())
+    try:
+        chat_model = provider.chat_model(temperature=0.0)  # type: ignore[attr-defined]
+        bound_model = chat_model.bind_tools(tools)
+    except Exception as e:
+        reason = f"tool binding failed: {e}"
+        logger.warning(
+            "agent.per_file.failed",
             file_id=parsed.file_id,
             file_type=parsed.type,
-            iteration=it,
-            workflow_count=len(ws.workflows),
-            pain_signal_count=len(ws.pain_signals),
-            lead_row_count=len(ws.lead_rows),
-            open_question_count=len(ws.open_questions),
+            error=reason,
+            elapsed_ms=round((time.perf_counter() - started) * 1000),
         )
-        result_dict, meta = provider.generate_json(
-            prompt_name=f"per_file_{parsed.type}",
-            prompt=prompt,
-            schema=_ToolReply,
+        return _partial_summary(ws, parsed, started, reason=reason)
+
+    graph = _build_per_file_graph(bound_model=bound_model, tools=tools, ws=ws)
+    messages = _initial_messages(
+        brief=brief,
+        prompt_suffix=prompt_suffix,
+        parsed=parsed,
+        ws=ws,
+    )
+    config = langchain_config(
+        provider=getattr(provider, "name", type(provider).__name__),
+        model=getattr(provider, "model", type(provider).__name__),
+        prompt_name=f"per_file_{parsed.type}",
+        session_id=run_id,
+        trace_name=trace_name,
+        extra_tags=["per_file", parsed.type],
+        extra_metadata={
+            "agent_kind": "per_file_langgraph",
+            "file_id": parsed.file_id,
+            "file_name": parsed.file_name,
+            "file_type": parsed.type,
+            "segment_count": len(parsed.segments),
+            "iteration_cap": iteration_cap,
+            "agent_max_steps": DEFAULT_MAX_STEPS,
+        },
+    )
+    config["recursion_limit"] = DEFAULT_MAX_STEPS
+
+    try:
+        result = graph.invoke(
+            {"messages": messages, "final_summary": None, "fallback_reason": None},
+            config=config,
         )
-
-        if not result_dict:
-            ws.notes += " | LLM JSON parse failure — early finalize"
-            logger.warning(
-                "agent.per_file.iteration.parse_failed",
-                file_id=parsed.file_id,
-                file_type=parsed.type,
-                iteration=it,
-            )
-            break
-
-        try:
-            call = ToolCall(tool=result_dict["tool"], args=result_dict.get("args", {}))
-        except Exception as e:
-            history.append(f"BAD_REPLY {result_dict} -> {e}")
-            logger.warning(
-                "agent.per_file.tool_call.invalid",
-                file_id=parsed.file_id,
-                file_type=parsed.type,
-                iteration=it,
-                error=str(e),
-            )
-            continue
-
-        try:
-            tool_started = time.perf_counter()
-            logger.debug(
-                "agent.per_file.tool.started",
-                file_id=parsed.file_id,
-                file_type=parsed.type,
-                iteration=it,
-                tool=call.tool,
-                arg_keys=sorted(call.args.keys()),
-            )
-            result = dispatch(call, parsed=parsed, ws=ws)
-        except Exception as e:
-            history.append(f"{call.tool}({call.args}) -> ERROR {e}")
-            logger.warning(
-                "agent.per_file.tool.failed",
-                file_id=parsed.file_id,
-                file_type=parsed.type,
-                iteration=it,
-                tool=call.tool,
-                arg_keys=sorted(call.args.keys()),
-                error=str(e),
-                llm_ms=meta.latency_ms,
-            )
-            if on_tool_call:
-                on_tool_call(call.tool, call.args, {"error": str(e)})
-            continue
-        logger.debug(
-            "agent.per_file.tool.completed",
+    except GraphRecursionError:
+        reason = f"agent_max_steps={DEFAULT_MAX_STEPS} hit without finalize_summary"
+        logger.warning(
+            "agent.per_file.recursion_limit",
             file_id=parsed.file_id,
             file_type=parsed.type,
-            iteration=it,
-            tool=call.tool,
-            result_type=type(result).__name__,
-            workflow_count=len(ws.workflows),
-            pain_signal_count=len(ws.pain_signals),
-            lead_row_count=len(ws.lead_rows),
-            open_question_count=len(ws.open_questions),
-            elapsed_ms=round((time.perf_counter() - tool_started) * 1000),
+            agent_max_steps=DEFAULT_MAX_STEPS,
+            elapsed_ms=round((time.perf_counter() - started) * 1000),
         )
+        return _partial_summary(ws, parsed, started, reason=reason)
+    except LLMParseError:
+        # Re-raise so the graph node wrapper can append a structured ExtractionError.
+        raise
+    except Exception as e:
+        reason = f"LangGraph agent failed: {e}"
+        logger.warning(
+            "agent.per_file.failed",
+            file_id=parsed.file_id,
+            file_type=parsed.type,
+            error=str(e),
+            elapsed_ms=round((time.perf_counter() - started) * 1000),
+        )
+        return _partial_summary(ws, parsed, started, reason=reason)
 
-        if on_tool_call:
-            on_tool_call(call.tool, call.args, result)
-
-        if call.tool == "finalize_summary":
-            logger.info(
-                "agent.per_file.completed",
-                file_id=parsed.file_id,
-                file_type=parsed.type,
-                iteration=it,
-                finalized=True,
-                workflow_count=len(result.key_workflows),
-                pain_signal_count=len(result.key_pain_signals),
-                lead_row_count=len(result.lead_rows),
-                open_question_count=len(result.open_questions),
-                elapsed_ms=round((time.perf_counter() - started) * 1000),
-            )
-            return result  # FileSummary
-
-        if call.tool == "cite_locator" and isinstance(result, dict) and result.get("valid") is True:
-            locator = call.args.get("locator")
-            if isinstance(locator, dict):
-                validated_sources.append(
-                    {
-                        "source": _source_from_locator(parsed, locator),
-                        "text": result.get("text", ""),
-                    }
-                )
-
-        history.append(f"{call.tool}({json.dumps(call.args)[:120]}) -> {str(result)[:120]}")
+    messages = result.get("messages", []) if isinstance(result, dict) else []
+    _emit_tool_callbacks(messages, on_tool_call)
+    summary = result.get("final_summary") if isinstance(result, dict) else None
+    if summary is not None:
         logger.info(
-            "agent.per_file.iteration.completed",
+            "agent.per_file.completed",
             file_id=parsed.file_id,
             file_type=parsed.type,
-            iteration=it,
-            tool=call.tool,
-            llm_ms=meta.latency_ms,
-            total_ms=round((time.perf_counter() - iteration_started) * 1000),
-            workflows=len(ws.workflows),
-            pain_signals=len(ws.pain_signals),
-            lead_rows=len(ws.lead_rows),
-            open_questions=len(ws.open_questions),
-            parsed_json=meta.parsed_json,
-            model=meta.model,
+            finalized=True,
+            workflow_count=len(summary.key_workflows),
+            pain_signal_count=len(summary.key_pain_signals),
+            lead_row_count=len(summary.lead_rows),
+            open_question_count=len(summary.open_questions),
+            elapsed_ms=round((time.perf_counter() - started) * 1000),
+        )
+        return summary
+
+    reason = result.get("fallback_reason") if isinstance(result, dict) else None
+    return _partial_summary(
+        ws,
+        parsed,
+        started,
+        reason=reason or f"agent_max_steps={DEFAULT_MAX_STEPS} hit without finalize_summary",
+    )
+
+
+def _initial_messages(
+    *,
+    brief: str,
+    prompt_suffix: str,
+    parsed: ParsedFile,
+    ws: WorkingState,
+) -> list[BaseMessage]:
+    """Build the initial system/user messages for the per-file LangGraph."""
+    system = (
+        brief
+        + "\n\nFile-type guidance:\n"
+        + (prompt_suffix or "No additional file-type guidance.")
+        + "\n\nUse tools to inspect evidence and build findings. "
+        + "Call cite_locator before using a locator as a source. "
+        + "Call finalize_summary when the file summary is complete."
+    )
+    user = (
+        "Segment index (locator previews and first text shown for picking read_segment indices):\n"
+        + _segment_index_recap(parsed)
+        + f"\n\nCurrent working state: {_state_recap(ws)}"
+        + "\n\nValidated source candidates:\nNone yet. Call cite_locator before attaching any source."
+    )
+    return [SystemMessage(content=system), HumanMessage(content=user)]
+
+
+def _build_per_file_graph(*, bound_model: Any, tools: list[Any], ws: WorkingState):
+    """Build a compact LangGraph ReAct loop with explicit terminal routing."""
+
+    def agent_node(state: _PerFileGraphState, config: RunnableConfig) -> dict:
+        ws.iteration += 1
+        response = bound_model.invoke(state.get("messages", []), config=config)
+        return {"messages": [response]}
+
+    def finalize_node(state: _PerFileGraphState) -> dict:
+        summary, error = _final_summary_or_error(state.get("messages", []))
+        if summary is not None:
+            return {"final_summary": summary}
+        # finalize_summary output was invalid — equivalent to parsed_json=False; raise
+        # so the graph node wrapper can append an ExtractionError instead of silently
+        # producing a partial summary that looks like a successful extraction.
+        raise LLMParseError(
+            stage="per_file_react",
+            file_id=ws.file_id,
+            message=error or "finalize_summary output was invalid",
         )
 
-    # Iteration cap hit without finalize.
-    ws.notes += f" | iteration_cap={iteration_cap} hit without finalize_summary"
+    def fallback_node(state: _PerFileGraphState) -> dict:
+        if state.get("fallback_reason"):
+            return {}
+        last_ai = _last_ai_message(state.get("messages", []))
+        if last_ai is None:
+            return {"fallback_reason": "agent did not produce a model response"}
+        if not _tool_calls(last_ai):
+            return {"fallback_reason": "finalize_summary was not called"}
+        return {"fallback_reason": "agent stopped before finalize_summary"}
+
+    graph = StateGraph(_PerFileGraphState)
+    graph.add_node("agent", agent_node)
+    graph.add_node("tools", ToolNode(tools, handle_tool_errors=True))
+    graph.add_node("finalize", finalize_node)
+    graph.add_node("fallback", fallback_node)
+    graph.set_entry_point("agent")
+    graph.add_conditional_edges("agent", _route_after_agent, {"tools": "tools", "fallback": "fallback"})
+    graph.add_conditional_edges("tools", _route_after_tools, {"agent": "agent", "finalize": "finalize"})
+    graph.add_edge("finalize", END)
+    graph.add_edge("fallback", END)
+    return graph.compile()
+
+
+def _route_after_agent(state: _PerFileGraphState) -> str:
+    """Route model responses with tool calls to tools; otherwise fallback."""
+    last_ai = _last_ai_message(state.get("messages", []))
+    if last_ai is None or not _tool_calls(last_ai):
+        return "fallback"
+    return "tools"
+
+
+def _route_after_tools(state: _PerFileGraphState) -> str:
+    """Finalize after a finalize_summary call; otherwise continue the tool loop."""
+    last_ai = _last_ai_message(state.get("messages", []))
+    if last_ai is not None:
+        for call in _tool_calls(last_ai):
+            if call.get("name") == "finalize_summary":
+                return "finalize"
+    return "agent"
+
+
+def _last_ai_message(messages: list[Any]) -> AIMessage | None:
+    """Return the latest AIMessage in a LangChain/LangGraph transcript."""
+    for message in reversed(messages):
+        if isinstance(message, AIMessage):
+            return message
+    return None
+
+
+def _tool_calls(message: AIMessage) -> list[dict]:
+    """Return tool calls from an AIMessage, tolerating provider-specific shapes."""
+    calls = getattr(message, "tool_calls", None) or []
+    return [call for call in calls if isinstance(call, dict)]
+
+
+def _final_summary_from_messages(messages: list[Any]) -> FileSummary | None:
+    """Extract the finalize_summary tool output from a LangChain agent transcript."""
+    summary, _ = _final_summary_or_error(messages)
+    return summary
+
+
+def _final_summary_or_error(messages: list[Any]) -> tuple[FileSummary | None, str | None]:
+    """Extract and validate the finalize_summary tool output with an error reason."""
+    for message in reversed(messages):
+        if isinstance(message, ToolMessage) and message.name == "finalize_summary":
+            try:
+                return FileSummary.model_validate_json(message.content), None
+            except Exception as json_exc:
+                try:
+                    return FileSummary.model_validate(json.loads(message.content)), None
+                except Exception as model_exc:
+                    return (
+                        None,
+                        f"finalize_summary validation failed: {json_exc}; {model_exc}",
+                    )
+    return None, "finalize_summary tool output was not found"
+
+
+def _emit_tool_callbacks(messages: list[Any], on_tool_call: Any) -> None:
+    """Replay LangChain tool calls to the existing optional tool callback."""
+    if on_tool_call is None:
+        return
+    pending: dict[str, dict] = {}
+    for message in messages:
+        if isinstance(message, AIMessage):
+            for call in message.tool_calls:
+                pending[call["id"]] = {"name": call["name"], "args": call.get("args") or {}}
+        elif isinstance(message, ToolMessage):
+            call = pending.get(message.tool_call_id)
+            if call:
+                try:
+                    result = json.loads(message.content)
+                except Exception:
+                    result = message.content
+                try:
+                    on_tool_call(call["name"], call["args"], result)
+                except Exception as exc:
+                    logger.warning(
+                        "agent.per_file.tool_callback_failed",
+                        tool=call["name"],
+                        error=str(exc),
+                    )
+
+
+def _partial_summary(
+    ws: WorkingState,
+    parsed: ParsedFile,
+    started: float,
+    *,
+    reason: str | None = None,
+) -> FileSummary:
+    """Return the existing partial summary fallback shape."""
+    if reason:
+        ws.notes = (ws.notes + " | " if ws.notes else "") + reason
     summary = FileSummary(
         file_id=ws.file_id,
         file_name=ws.file_name,

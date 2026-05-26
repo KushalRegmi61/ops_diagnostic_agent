@@ -8,7 +8,7 @@ Sits at the top of the pipeline: HTTP -> services -> graph -> agents -> parsers.
 from contextlib import asynccontextmanager
 import asyncio
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -16,16 +16,8 @@ from sqlalchemy.orm import Session
 from app import models  # noqa: F401  (register tables with Base.metadata)
 from app.config import get_settings
 from app.database import Base, SessionLocal, engine, get_db
-from app.parsers import csv as _p_csv
-from app.parsers import docx as _p_docx
-from app.parsers import json as _p_json
-from app.parsers import mbox as _p_mbox
-from app.parsers import md as _p_md
-from app.parsers import pdf as _p_pdf
-from app.parsers import srt as _p_srt
-from app.parsers import txt as _p_txt
-from app.parsers import vtt as _p_vtt
-from app.parsers import xlsx as _p_xlsx
+from app.parsers import _MIME_ROUTES  # type: ignore[attr-defined]  # registry source of truth
+from app.parsers import excerpt as parsers_excerpt
 from app.models import Run
 from app.run_events import run_event_hub
 from app.schemas import Blueprint, FileRef
@@ -52,29 +44,15 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Ops Diagnostic Agent", version="0.1.0", lifespan=lifespan)
-settings = get_settings()
 logger = get_logger(__name__)
+_settings_for_cors = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.frontend_cors_origins,
+    allow_origins=_settings_for_cors.frontend_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-_EXCERPT_MODULES = {
-    "pdf": _p_pdf,
-    "docx": _p_docx,
-    "md": _p_md,
-    "txt": _p_txt,
-    "transcript_vtt": _p_vtt,
-    "transcript_srt": _p_srt,
-    "csv": _p_csv,
-    "xlsx": _p_xlsx,
-    "mbox": _p_mbox,
-    "json": _p_json,
-}
 
 
 class ExcerptRequest(BaseModel):
@@ -100,18 +78,46 @@ def post_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> FileRef:
-    """Upload a single file: persists bytes to blob store, parses, and inserts a FileRecord row."""
+    """Upload a single file. Rejects unsupported mimes (415) and oversize bodies (413)."""
     clear_context()
+    settings_now = get_settings()
+    mime_type = file.content_type or "application/octet-stream"
+    if mime_type not in _MIME_ROUTES:
+        logger.warning("http.file_upload.rejected", reason="unsupported_mime", mime_type=mime_type)
+        raise HTTPException(status_code=415, detail=f"unsupported mime_type={mime_type}")
+
+    max_bytes = settings_now.max_upload_mb * 1024 * 1024
+    chunks: list[bytes] = []
+    total = 0
+    chunk_size = 1024 * 1024
+    while True:
+        chunk = file.file.read(chunk_size)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            logger.warning(
+                "http.file_upload.rejected",
+                reason="too_large",
+                limit_mb=settings_now.max_upload_mb,
+            )
+            raise HTTPException(
+                status_code=413,
+                detail=f"file too large (limit {settings_now.max_upload_mb} MB)",
+            )
+        chunks.append(chunk)
+    content = b"".join(chunks)
+
     logger.info(
         "http.file_upload.started",
         file_name=file.filename or "unknown",
-        mime_type=file.content_type or "application/octet-stream",
+        mime_type=mime_type,
+        byte_count=len(content),
     )
-    content = file.file.read()
     ref = upload_file(
         db,
         file_name=file.filename or "unknown",
-        mime_type=file.content_type or "application/octet-stream",
+        mime_type=mime_type,
         content=content,
     )
     db.commit()
@@ -130,12 +136,8 @@ def post_excerpt(
         parsed = get_parsed(db, file_id)
     except ValueError:
         raise HTTPException(status_code=404, detail=f"file {file_id} not found")
-
-    module = _EXCERPT_MODULES.get(parsed.type)
-    if module is None:
-        raise HTTPException(status_code=400, detail=f"no excerpt module for type {parsed.type}")
     try:
-        text = module.excerpt(parsed, body.locator)
+        text = parsers_excerpt(parsed, body.locator)
     except (KeyError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     return ExcerptResponse(text=text)
@@ -171,8 +173,19 @@ def _run_event_emitter(run_id: str):
     return emit
 
 
-def _start_run_background(run_id: str) -> None:
-    """Run the diagnostic graph after POST /api/runs has returned."""
+_run_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_run_semaphore() -> asyncio.Semaphore:
+    """Lazily build the module-level dispatch semaphore from current Settings."""
+    global _run_semaphore
+    if _run_semaphore is None:
+        _run_semaphore = asyncio.Semaphore(get_settings().max_concurrent_runs)
+    return _run_semaphore
+
+
+def _start_run_sync(run_id: str) -> None:
+    """Sync body executed inside a worker thread (acquires no event loop)."""
     db = SessionLocal()
     emit = _run_event_emitter(run_id)
     try:
@@ -197,13 +210,24 @@ def _start_run_background(run_id: str) -> None:
         db.close()
 
 
+async def _start_run_dispatch(run_id: str) -> None:
+    """Acquire the concurrency semaphore and run start_run in a worker thread."""
+    sem = _get_run_semaphore()
+    async with sem:
+        await asyncio.to_thread(_start_run_sync, run_id)
+
+
 @app.post("/api/runs", response_model=RunResponse)
-def post_run(
+async def post_run(
     body: CreateRunRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> RunResponse:
-    """Create a run, link files, and start the diagnostic graph in the background."""
+    """Create a run, link files, and start the diagnostic graph in the background.
+
+    Dispatches work via asyncio.create_task → _start_run_dispatch, which gates
+    concurrent executions with a module-level Semaphore sized by max_concurrent_runs.
+    Single-process scope only; multi-worker deployments need an external queue.
+    """
     clear_context()
     logger.info("http.run_create.started", file_count=len(body.file_ids), file_ids=body.file_ids)
     if not body.file_ids:
@@ -225,7 +249,7 @@ def post_run(
         stage="queued",
         data={"file_count": len(body.file_ids), "file_ids": body.file_ids},
     )
-    background_tasks.add_task(_start_run_background, run_id)
+    asyncio.create_task(_start_run_dispatch(run_id))
     logger.info("http.run_create.queued", run_id=run_id, status=run.status)
     return RunResponse(run_id=run_id, status=run.status, langfuse_trace_id=run.langfuse_trace_id)
 

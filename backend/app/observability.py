@@ -7,7 +7,7 @@ caller sees them.
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import lru_cache
-from typing import Any
+from typing import Any, Optional
 
 try:
     from langfuse import Langfuse
@@ -15,8 +15,10 @@ except ImportError:  # pragma: no cover
     Langfuse = None  # type: ignore
 
 from app.config import get_settings
+from app.structured_logging import get_logger
 
 current_trace: ContextVar[Any] = ContextVar("current_trace", default=None)
+logger = get_logger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -35,6 +37,75 @@ def langfuse_client():
         )
     except Exception:
         return None
+
+
+def _build_langfuse_handler(
+    session_id: Optional[str] = None,
+    trace_name: Optional[str] = None,
+) -> Any:
+    """Return a CallbackHandler attached to the cached Langfuse client.
+
+    Reuses the single ``langfuse_client()`` instance for the process — no fresh
+    Langfuse(...) construction per call. Returns None if keys are unset or the
+    handler module is unavailable.
+    """
+    client = langfuse_client()
+    if client is None:
+        return None
+    try:
+        from langfuse.langchain import CallbackHandler  # type: ignore
+        return CallbackHandler()
+    except ImportError as exc:
+        logger.warning(
+            "langfuse package not installed; tracing disabled",
+            error=str(exc),
+            session_id=session_id,
+            trace_name=trace_name,
+        )
+        return None
+    except Exception as exc:
+        logger.warning(
+            "Failed to initialize Langfuse handler",
+            error=str(exc),
+            session_id=session_id,
+            trace_name=trace_name,
+        )
+        return None
+
+
+def langchain_config(
+    *,
+    provider: str,
+    model: str,
+    prompt_name: str | None = None,
+    session_id: str | None = None,
+    trace_name: str | None = None,
+    extra_metadata: dict[str, Any] | None = None,
+    extra_tags: list[str] | None = None,
+) -> dict:
+    """Build LangChain invocation config with optional Langfuse callbacks."""
+    handler = _build_langfuse_handler(session_id=session_id, trace_name=trace_name)
+    metadata = {"provider": provider, "model": model}
+    if prompt_name:
+        metadata["prompt_name"] = prompt_name
+    if session_id:
+        metadata["session_id"] = session_id
+    if trace_name:
+        metadata["trace_name"] = trace_name
+    if extra_metadata:
+        metadata.update(extra_metadata)
+
+    tags = [provider]
+    if prompt_name:
+        tags.append(prompt_name)
+    if extra_tags:
+        tags.extend(extra_tags)
+
+    return {
+        "callbacks": [handler] if handler is not None else [],
+        "tags": tags,
+        "metadata": metadata,
+    }
 
 
 @contextmanager

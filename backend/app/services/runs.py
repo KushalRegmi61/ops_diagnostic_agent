@@ -181,7 +181,6 @@ def start_run(
     logger.info("run.status.updated", status=run.status)
     _emit(on_event, "run_status_updated", "Run is now active", "start", status=run.status)
 
-    get_provider.cache_clear()
     provider = get_provider()
     logger.info("run.provider.ready", provider=getattr(provider, "name", type(provider).__name__))
     _emit(
@@ -225,6 +224,23 @@ def start_run(
             redo_count=final_state.get("redo_count", 0),
             revision_count=final_state.get("revision_count", 0),
             has_blueprint=final_state.get("blueprint") is not None,
+        )
+
+    errors = final_state.get("errors") or []
+    if errors:
+        logger.warning(
+            "run.errors.summary",
+            error_count=len(errors),
+            stages=sorted({e.stage for e in errors}),
+        )
+        _emit(
+            on_event,
+            "run_errors_summary",
+            f"{len(errors)} structured error(s) recorded",
+            "complete",
+            "warning",
+            error_count=len(errors),
+            stages=sorted({e.stage for e in errors}),
         )
 
     # Persist file summaries.

@@ -121,10 +121,15 @@ class ParsedFile(BaseModel):
 
 
 class ExtractionError(BaseModel):
-    """A structured failure surfaced from parsing, per-file agent run, or review."""
+    """A structured failure surfaced from parsing, per-file agent run, review, or graph nodes."""
 
     file_id: str
-    stage: Literal["parse", "agent", "review"]
+    stage: Literal[
+        "parse", "agent", "review",
+        "synthesis", "review_summaries", "workflow_map", "bottleneck_detect",
+        "roi_score", "fastest_win_select", "solution_blueprint", "self_review_final",
+        "per_file_react",
+    ]
     message: str
 
 

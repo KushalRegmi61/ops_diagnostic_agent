@@ -6,7 +6,7 @@ stored as JSON-encoded strings.
 import json
 
 from app.database import Base, SessionLocal, engine
-from app.models import BlueprintRecord, FileSummaryRecord, IntakeBundleRecord, Run
+from app.models import BlueprintRecord, FileRecord, FileSummaryRecord, IntakeBundleRecord, Run
 
 
 def setup_module():
@@ -18,10 +18,15 @@ def setup_module():
 def test_persist_file_summary_record():
     """FileSummaryRecord round-trips its payload_json string."""
     with SessionLocal() as s:
-        # Need a Run + File to satisfy FK constraints later; for this test of
-        # FileSummaryRecord alone we use a file_id that exists in files table.
-        # Skip FK constraint by inserting against SQLite (lenient) — if test
-        # fails due to FK, add a parent File first.
+        # Insert a parent FileRecord so the ON DELETE CASCADE FK is satisfied.
+        s.add(FileRecord(
+            id="f1",
+            file_name="test.pdf",
+            mime_type="application/pdf",
+            blob_path="/tmp/test.pdf",
+            parser_status="ok",
+        ))
+        s.commit()
         rec = FileSummaryRecord(file_id="f1", payload_json=json.dumps({"x": 1}))
         s.add(rec)
         s.commit()

@@ -10,11 +10,13 @@ Wiring:
                 → (bounded revision) solution_blueprint | END
 """
 import time
+from pathlib import Path
 from typing import Callable
 
 from langgraph.graph import END, StateGraph
 
 from app import _langgraph_pydantic_patch  # noqa: F401  (teach Redis serializer about Pydantic)
+from app.parsers import parse as parsers_parse
 from app.agents.lead import (
     bottleneck_detect,
     fastest_win_select,
@@ -25,37 +27,15 @@ from app.agents.lead import (
     synthesis,
     workflow_map,
 )
-from app.agents.per_file import (
-    docx as a_docx,
-    json as a_json,
-    markdown as a_markdown,
-    mbox as a_mbox,
-    pdf as a_pdf,
-    table as a_table,
-    transcript as a_transcript,
-)
-from app.llm.base import LLMProvider
+from app.llm.base import LLMParseError, LLMProvider
 from app.observability import node_span
-from app.schemas import IntakeBundle, ParsedFile
+from app.registry import get_agent_module
+from app.schemas import ExtractionError, IntakeBundle, ParsedFile, SummaryReview
 from app.state import DiagnosticState
 from app.structured_logging import get_logger
 
 
 logger = get_logger(__name__)
-
-# FileType -> per-file agent module.
-_PER_FILE_AGENTS = {
-    "pdf": a_pdf,
-    "docx": a_docx,
-    "md": a_markdown,
-    "txt": a_markdown,
-    "transcript_vtt": a_transcript,
-    "transcript_srt": a_transcript,
-    "csv": a_table,
-    "xlsx": a_table,
-    "mbox": a_mbox,
-    "json": a_json,
-}
 
 
 def build_graph(
@@ -91,6 +71,7 @@ def build_graph(
             reason = "initial"
 
         out = dict(state.get("file_summaries", {}) or {})
+        new_errors: list[ExtractionError] = []
         logger.info(
             "graph.node.started",
             node="per_file_fanout",
@@ -113,9 +94,32 @@ def build_graph(
                     continue
                 parsed = parsed_files.get(file_ref.file_id)
                 if parsed is None:
-                    logger.warning("graph.per_file.skipped", file_id=file_ref.file_id, reason="not_parsed")
-                    continue
-                agent = _PER_FILE_AGENTS.get(parsed.type)
+                    # Resumability: on worker restart the closure is empty. Re-parse
+                    # from the FileRef's blob_path so the run picks up where it left
+                    # off instead of silently skipping. See audit.md C1.
+                    try:
+                        parsed = parsers_parse(
+                            file_id=file_ref.file_id,
+                            file_name=file_ref.file_name,
+                            path=Path(file_ref.blob_path),
+                            mime_type=file_ref.mime_type,
+                        )
+                        parsed_files[file_ref.file_id] = parsed  # cache for redo passes
+                        logger.info(
+                            "graph.per_file.rehydrated",
+                            file_id=file_ref.file_id,
+                            file_type=parsed.type,
+                            segment_count=len(parsed.segments),
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "graph.per_file.skipped",
+                            file_id=file_ref.file_id,
+                            reason="rehydrate_failed",
+                            error=str(exc),
+                        )
+                        continue
+                agent = get_agent_module(parsed.type)
                 if agent is None:
                     logger.warning(
                         "graph.per_file.skipped",
@@ -142,7 +146,36 @@ def build_graph(
                     segment_count=len(parsed.segments),
                 )
                 with node_span(f"per_file:{file_ref.file_id}", input={"type": parsed.type}):
-                    summary = agent.run(provider=provider, parsed=parsed, on_tool_call=on_tool_call)
+                    try:
+                        summary = agent.run(
+                            provider=provider,
+                            parsed=parsed,
+                            on_tool_call=on_tool_call,
+                            run_id=state["run_id"],
+                            trace_name=f"per_file:{file_ref.file_id}",
+                        )
+                    except LLMParseError as err:
+                        logger.error(
+                            "graph.per_file.failed",
+                            file_id=file_ref.file_id,
+                            stage=err.stage,
+                            error=err.message,
+                        )
+                        emit(
+                            "graph_per_file_failed",
+                            f"Per-file agent failed for {file_ref.file_name}: parsed_json=False",
+                            "per_file",
+                            "error",
+                            file_id=file_ref.file_id,
+                            file_name=file_ref.file_name,
+                            stage=err.stage,
+                        )
+                        new_errors.append(ExtractionError(
+                            file_id=err.file_id or file_ref.file_id,
+                            stage=err.stage,
+                            message=err.message,
+                        ))
+                        continue
                 out[file_ref.file_id] = summary
                 elapsed_ms = round((time.perf_counter() - file_started) * 1000)
                 logger.info(
@@ -171,6 +204,7 @@ def build_graph(
             "graph.node.completed",
             node="per_file_fanout",
             output_count=len(out),
+            error_count=len(new_errors),
             elapsed_ms=elapsed_ms,
         )
         emit(
@@ -181,7 +215,11 @@ def build_graph(
             output_count=len(out),
             elapsed_ms=elapsed_ms,
         )
-        return {"file_summaries": out}
+        result: dict = {"file_summaries": out}
+        if new_errors:
+            existing = list(state.get("errors") or [])
+            result["errors"] = existing + new_errors
+        return result
 
     def review_node(state: DiagnosticState) -> dict:
         """Run review_summaries over the per-file outputs and capture any revision requests."""
@@ -189,7 +227,15 @@ def build_graph(
         logger.info("graph.node.started", node="review_summaries", file_summary_count=len(state["file_summaries"]))
         emit("graph_node_started", "Reviewing file summaries", "review", node="review_summaries")
         with node_span("review_summaries"):
-            rev = review_summaries.run(provider=provider, file_summaries=state["file_summaries"])
+            try:
+                rev = review_summaries.run(provider=provider, file_summaries=state["file_summaries"])
+            except LLMParseError as err:
+                logger.error("graph.node.failed", node="review_summaries", stage=err.stage, error=err.message)
+                emit("graph_node_failed", "Review summaries failed: parsed_json=False", "review", "error",
+                     node="review_summaries", stage=err.stage)
+                existing = list(state.get("errors") or [])
+                existing.append(ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message))
+                return {"summary_review": SummaryReview(revision_requests=[], notes="(review_summaries LLM parse failed)"), "errors": existing}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "graph.node.completed",
@@ -245,7 +291,19 @@ def build_graph(
         logger.info("graph.node.started", node="synthesis", file_summary_count=len(state["file_summaries"]))
         emit("graph_node_started", "Synthesizing cross-file intake bundle", "synthesis", node="synthesis")
         with node_span("synthesis"):
-            bundle = synthesis.run(provider=provider, file_summaries=state["file_summaries"])
+            try:
+                bundle = synthesis.run(provider=provider, file_summaries=state["file_summaries"])
+            except LLMParseError as err:
+                logger.error("graph.node.failed", node="synthesis", stage=err.stage, error=err.message)
+                emit("graph_node_failed", "Synthesis failed: parsed_json=False", "synthesis", "error",
+                     node="synthesis", stage=err.stage)
+                existing = list(state.get("errors") or [])
+                existing.append(ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message))
+                empty = IntakeBundle(
+                    workflows=[], pain_signals=[], lead_rows=[],
+                    contradictions=[], file_index=[], extraction_errors=[],
+                )
+                return {"bundle": empty, "errors": existing}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "graph.node.completed",
@@ -270,12 +328,31 @@ def build_graph(
     def workflow_map_node(state: DiagnosticState) -> dict:
         """Map the bundle into structured WorkflowRecords."""
         b = state["bundle"]
-        assert isinstance(b, IntakeBundle)
+        if not isinstance(b, IntakeBundle):
+            err = ExtractionError(
+                file_id="",
+                stage="workflow_map",
+                message="bundle is None at node entry — upstream synthesis failed",
+            )
+            logger.error("graph.node.failed", node="workflow_map", reason="missing_bundle")
+            emit("graph_node_failed", "workflow_map skipped: missing bundle", "diagnose", "error",
+                 node="workflow_map", reason="missing_bundle")
+            existing = list(state.get("errors") or [])
+            existing.append(err)
+            return {"workflows": [], "errors": existing}
         started = time.perf_counter()
         logger.info("graph.node.started", node="workflow_map", bundle_workflow_count=len(b.workflows))
         emit("graph_node_started", "Mapping workflows", "diagnose", node="workflow_map")
         with node_span("workflow_map"):
-            wfs = workflow_map.run(provider=provider, bundle=b)
+            try:
+                wfs = workflow_map.run(provider=provider, bundle=b)
+            except LLMParseError as err:
+                logger.error("graph.node.failed", node="workflow_map", stage=err.stage, error=err.message)
+                emit("graph_node_failed", "Workflow map failed: parsed_json=False", "diagnose", "error",
+                     node="workflow_map", stage=err.stage)
+                existing = list(state.get("errors") or [])
+                existing.append(ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message))
+                return {"workflows": [], "errors": existing}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "graph.node.completed",
@@ -296,7 +373,18 @@ def build_graph(
     def bottleneck_detect_node(state: DiagnosticState) -> dict:
         """Detect Bottlenecks inside the mapped workflows using the bundle's pain signals."""
         b = state["bundle"]
-        assert isinstance(b, IntakeBundle)
+        if not isinstance(b, IntakeBundle):
+            err = ExtractionError(
+                file_id="",
+                stage="bottleneck_detect",
+                message="bundle is None at node entry — upstream synthesis failed",
+            )
+            logger.error("graph.node.failed", node="bottleneck_detect", reason="missing_bundle")
+            emit("graph_node_failed", "bottleneck_detect skipped: missing bundle", "diagnose", "error",
+                 node="bottleneck_detect", reason="missing_bundle")
+            existing = list(state.get("errors") or [])
+            existing.append(err)
+            return {"bottlenecks": [], "errors": existing}
         started = time.perf_counter()
         logger.info(
             "graph.node.started",
@@ -306,7 +394,15 @@ def build_graph(
         )
         emit("graph_node_started", "Detecting bottlenecks", "diagnose", node="bottleneck_detect")
         with node_span("bottleneck_detect"):
-            bns = bottleneck_detect.run(provider=provider, bundle=b, workflows=state["workflows"])
+            try:
+                bns = bottleneck_detect.run(provider=provider, bundle=b, workflows=state["workflows"])
+            except LLMParseError as err:
+                logger.error("graph.node.failed", node="bottleneck_detect", stage=err.stage, error=err.message)
+                emit("graph_node_failed", "Bottleneck detection failed: parsed_json=False", "diagnose", "error",
+                     node="bottleneck_detect", stage=err.stage)
+                existing = list(state.get("errors") or [])
+                existing.append(ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message))
+                return {"bottlenecks": [], "errors": existing}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "graph.node.completed",
@@ -327,12 +423,31 @@ def build_graph(
     def roi_score_node(state: DiagnosticState) -> dict:
         """Score each bottleneck as an automation Opportunity (pain, ROI, effort, risk)."""
         b = state["bundle"]
-        assert isinstance(b, IntakeBundle)
+        if not isinstance(b, IntakeBundle):
+            err = ExtractionError(
+                file_id="",
+                stage="roi_score",
+                message="bundle is None at node entry — upstream synthesis failed",
+            )
+            logger.error("graph.node.failed", node="roi_score", reason="missing_bundle")
+            emit("graph_node_failed", "roi_score skipped: missing bundle", "score", "error",
+                 node="roi_score", reason="missing_bundle")
+            existing = list(state.get("errors") or [])
+            existing.append(err)
+            return {"opportunities": [], "errors": existing}
         started = time.perf_counter()
         logger.info("graph.node.started", node="roi_score", bottleneck_count=len(state["bottlenecks"]))
         emit("graph_node_started", "Scoring automation opportunities", "score", node="roi_score")
         with node_span("roi_score"):
-            ops = roi_score.run(provider=provider, bundle=b, bottlenecks=state["bottlenecks"])
+            try:
+                ops = roi_score.run(provider=provider, bundle=b, bottlenecks=state["bottlenecks"])
+            except LLMParseError as err:
+                logger.error("graph.node.failed", node="roi_score", stage=err.stage, error=err.message)
+                emit("graph_node_failed", "ROI scoring failed: parsed_json=False", "score", "error",
+                     node="roi_score", stage=err.stage)
+                existing = list(state.get("errors") or [])
+                existing.append(ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message))
+                return {"opportunities": [], "errors": existing}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "graph.node.completed",
@@ -356,7 +471,15 @@ def build_graph(
         logger.info("graph.node.started", node="fastest_win_select", opportunity_count=len(state["opportunities"]))
         emit("graph_node_started", "Selecting fastest win", "select", node="fastest_win_select")
         with node_span("fastest_win_select"):
-            sel = fastest_win_select.run(provider=provider, opportunities=state["opportunities"])
+            try:
+                sel = fastest_win_select.run(provider=provider, opportunities=state["opportunities"])
+            except LLMParseError as err:
+                logger.error("graph.node.failed", node="fastest_win_select", stage=err.stage, error=err.message)
+                emit("graph_node_failed", "Fastest win selection failed: parsed_json=False", "select", "error",
+                     node="fastest_win_select", stage=err.stage)
+                existing = list(state.get("errors") or [])
+                existing.append(ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message))
+                return {"selected": None, "errors": existing}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "graph.node.completed",
@@ -378,6 +501,11 @@ def build_graph(
         """Produce the cited Blueprint; on a revision pass, feeds final_review.detail back in."""
         sel = state["selected"]
         if sel is None:
+            err = ExtractionError(
+                file_id="",
+                stage="solution_blueprint",
+                message="no opportunity selected; cannot build blueprint",
+            )
             logger.warning("graph.node.skipped", node="solution_blueprint", reason="no_selected_opportunity")
             emit(
                 "graph_node_skipped",
@@ -387,9 +515,22 @@ def build_graph(
                 node="solution_blueprint",
                 reason="no_selected_opportunity",
             )
-            return {"blueprint": None}
+            existing = list(state.get("errors") or [])
+            existing.append(err)
+            return {"blueprint": None, "errors": existing}
         b = state["bundle"]
-        assert isinstance(b, IntakeBundle)
+        if not isinstance(b, IntakeBundle):
+            err = ExtractionError(
+                file_id="",
+                stage="solution_blueprint",
+                message="bundle is None at node entry — upstream synthesis failed",
+            )
+            logger.error("graph.node.failed", node="solution_blueprint", reason="missing_bundle")
+            emit("graph_node_failed", "solution_blueprint skipped: missing bundle", "blueprint", "error",
+                 node="solution_blueprint", reason="missing_bundle")
+            existing = list(state.get("errors") or [])
+            existing.append(err)
+            return {"blueprint": None, "errors": existing}
         idx = state["opportunities"].index(sel)
         fr = state.get("final_review")
         detail = fr.detail if (fr and not _final_review_ok(fr)) else None
@@ -397,10 +538,18 @@ def build_graph(
         logger.info("graph.node.started", node="solution_blueprint", selected_index=idx, revision=bool(detail))
         emit("graph_node_started", "Generating solution blueprint", "blueprint", node="solution_blueprint", revision=bool(detail))
         with node_span("solution_blueprint", input={"selected_index": idx, "revision": bool(detail)}):
-            bp = solution_blueprint.run(
-                provider=provider, bundle=b, selected=sel,
-                selected_index=idx, revision_detail=detail,
-            )
+            try:
+                bp = solution_blueprint.run(
+                    provider=provider, bundle=b, selected=sel,
+                    selected_index=idx, revision_detail=detail,
+                )
+            except LLMParseError as err:
+                logger.error("graph.node.failed", node="solution_blueprint", stage=err.stage, error=err.message)
+                emit("graph_node_failed", "Solution blueprint failed: parsed_json=False", "blueprint", "error",
+                     node="solution_blueprint", stage=err.stage)
+                existing = list(state.get("errors") or [])
+                existing.append(ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message))
+                return {"blueprint": None, "errors": existing}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "graph.node.completed",
@@ -424,6 +573,11 @@ def build_graph(
         """Run self_review_final — deterministic citation existence/reachability gates plus LLM consistency check."""
         bp = state["blueprint"]
         if bp is None:
+            err = ExtractionError(
+                file_id="",
+                stage="self_review_final",
+                message="no blueprint produced; cannot self-review",
+            )
             logger.warning("graph.node.skipped", node="self_review_final", reason="no_blueprint")
             emit(
                 "graph_node_skipped",
@@ -433,10 +587,35 @@ def build_graph(
                 node="self_review_final",
                 reason="no_blueprint",
             )
-            return {"final_review": None}
+            existing = list(state.get("errors") or [])
+            existing.append(err)
+            return {"final_review": None, "errors": existing}
         sel = state["selected"]
         b = state["bundle"]
-        assert sel is not None and isinstance(b, IntakeBundle)
+        if not isinstance(b, IntakeBundle):
+            err = ExtractionError(
+                file_id="",
+                stage="self_review_final",
+                message="bundle is None at node entry — upstream synthesis failed",
+            )
+            logger.error("graph.node.failed", node="self_review_final", reason="missing_bundle")
+            emit("graph_node_failed", "self_review_final skipped: missing bundle", "review_final", "error",
+                 node="self_review_final", reason="missing_bundle")
+            existing = list(state.get("errors") or [])
+            existing.append(err)
+            return {"final_review": None, "errors": existing}
+        if sel is None:
+            err = ExtractionError(
+                file_id="",
+                stage="self_review_final",
+                message="selected opportunity is None at node entry — upstream selection failed",
+            )
+            logger.error("graph.node.failed", node="self_review_final", reason="missing_selected")
+            emit("graph_node_failed", "self_review_final skipped: missing selected opportunity", "review_final", "error",
+                 node="self_review_final", reason="missing_selected")
+            existing = list(state.get("errors") or [])
+            existing.append(err)
+            return {"final_review": None, "errors": existing}
         started = time.perf_counter()
         logger.info(
             "graph.node.started",
@@ -445,13 +624,21 @@ def build_graph(
         )
         emit("graph_node_started", "Reviewing blueprint citations", "review_final", node="self_review_final")
         with node_span("self_review_final"):
-            fr = self_review_final.run(
-                provider=provider, blueprint=bp, bundle=b, selected=sel,
-                opportunities=state["opportunities"],
-                file_summaries=state["file_summaries"],
-                parsed_files=parsed_files,
-                revised_once=state.get("revision_count", 0) > 0,
-            )
+            try:
+                fr = self_review_final.run(
+                    provider=provider, blueprint=bp, bundle=b, selected=sel,
+                    opportunities=state["opportunities"],
+                    file_summaries=state["file_summaries"],
+                    parsed_files=parsed_files,
+                    revised_once=state.get("revision_count", 0) > 0,
+                )
+            except LLMParseError as err:
+                logger.error("graph.node.failed", node="self_review_final", stage=err.stage, error=err.message)
+                emit("graph_node_failed", "Self-review failed: parsed_json=False", "review_final", "error",
+                     node="self_review_final", stage=err.stage)
+                existing = list(state.get("errors") or [])
+                existing.append(ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message))
+                return {"final_review": None, "errors": existing}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "graph.node.completed",
