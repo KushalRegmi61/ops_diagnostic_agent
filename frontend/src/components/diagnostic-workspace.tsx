@@ -1,12 +1,13 @@
 "use client";
 
 /**
- * Diagnostic workspace — premium dark-mode UI.
+ * Diagnostic workspace — premium light-mode UI with a balanced 3-column layout.
  *
- * Drives the evidence-upload → run → cited blueprint flow against the FastAPI
- * backend. Designed as a single focused canvas: intake on the left rail, live
- * pipeline + blueprint on the right canvas. Citation chips expand into the
- * backend-resolved excerpt so every claim is one click from its source text.
+ * Left rail hosts intake + pipeline controls; the center column is the cited
+ * blueprint canvas; the right rail surfaces parsed evidence and the live event
+ * stream. Claim bodies are rendered as Markdown so the model's `**bold**`,
+ * lists, and headings come through cleanly. Citation chips expand inline to
+ * round-trip every claim back to its backend-resolved source excerpt.
  */
 
 import {
@@ -37,7 +38,6 @@ import {
 import {
   ChangeEvent,
   DragEvent,
-  Fragment,
   ReactNode,
   useEffect,
   useMemo,
@@ -61,6 +61,8 @@ import {
   uploadEvidenceFile,
 } from "@/lib/api";
 
+import { Markdown } from "./markdown";
+
 type WorkStatus = "idle" | "uploading" | "running" | "complete" | "error";
 
 type TimelineStep = {
@@ -69,45 +71,41 @@ type TimelineStep = {
   state: "done" | "active" | "waiting";
 };
 
-type AccentKey = "violet" | "teal" | "amber" | "rose";
+type AccentKey = "indigo" | "teal" | "amber" | "rose";
 
 const TERMINAL_RUN_EVENT_TYPES = new Set(["run_completed", "run_failed"]);
 
 const ACCENTS: Record<
   AccentKey,
-  { hex: string; bg: string; ring: string; soft: string; text: string }
+  { bg: string; soft: string; text: string; chipBorder: string }
 > = {
-  violet: {
-    hex: "#7c8cff",
-    bg: "bg-[#7c8cff]/12",
-    ring: "ring-violet",
-    soft: "border-[#7c8cff]/30",
-    text: "text-[#a6b1ff]",
+  indigo: {
+    bg: "bg-indigo-50",
+    soft: "border-indigo-200",
+    text: "text-indigo-700",
+    chipBorder: "border-indigo-200",
   },
   teal: {
-    hex: "#4ecdc4",
-    bg: "bg-[#4ecdc4]/12",
-    ring: "ring-teal",
-    soft: "border-[#4ecdc4]/30",
-    text: "text-[#7ee0d8]",
+    bg: "bg-teal-50",
+    soft: "border-teal-200",
+    text: "text-teal-700",
+    chipBorder: "border-teal-200",
   },
   amber: {
-    hex: "#ffb86b",
-    bg: "bg-[#ffb86b]/12",
-    ring: "ring-amber",
-    soft: "border-[#ffb86b]/30",
-    text: "text-[#ffd29a]",
+    bg: "bg-amber-50",
+    soft: "border-amber-200",
+    text: "text-amber-700",
+    chipBorder: "border-amber-200",
   },
   rose: {
-    hex: "#ff6b80",
-    bg: "bg-[#ff6b80]/12",
-    ring: "ring-rose",
-    soft: "border-[#ff6b80]/30",
-    text: "text-[#ff97a7]",
+    bg: "bg-rose-50",
+    soft: "border-rose-200",
+    text: "text-rose-700",
+    chipBorder: "border-rose-200",
   },
 };
 
-/** Bytes → compact human-readable size string for the upload queue. */
+/** Bytes → compact human-readable size for the upload queue. */
 function formatBytes(size: number): string {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
@@ -121,12 +119,12 @@ function toMessage(error: unknown): string {
   return "Unexpected frontend error.";
 }
 
-/** Append a streamed run event and cap the history so the rail stays snappy. */
+/** Append a streamed run event and cap history so the rail stays snappy. */
 function appendRunEvent(events: RunEvent[], event: RunEvent): RunEvent[] {
-  return [...events, event].slice(-60);
+  return [...events, event].slice(-80);
 }
 
-/** Open a WS to the run, forward events, resolve on terminal event, reject on failure. */
+/** Open a WS to the run, forward events, resolve on terminal event. */
 function waitForRunCompletion(
   runId: string,
   onEvent: (event: RunEvent) => void,
@@ -162,7 +160,7 @@ function waitForRunCompletion(
   });
 }
 
-/** Pick visual state for each step of the local 4-stage pipeline. */
+/** Compute the 4 pipeline-stage visuals from local state. */
 function timelineFor(
   status: WorkStatus,
   files: FileRef[],
@@ -216,14 +214,14 @@ function locatorLabel(locator: Record<string, unknown>): string {
   return "source";
 }
 
-/** Inline excerpt fetcher — collapsed by default, hits backend on expand. */
+/** Inline excerpt chip — collapsed by default, lazy-fetches excerpt on first open. */
 function CitationChip({ source }: { source: Source }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /** Toggle open + lazy-load the excerpt on first expand. */
+  /** Toggle open + lazy-load backend excerpt on first expand. */
   async function toggle() {
     const next = !open;
     setOpen(next);
@@ -245,13 +243,13 @@ function CitationChip({ source }: { source: Source }) {
     <div className="w-full">
       <button
         aria-expanded={open}
-        className="group inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--border-strong)] bg-white/[0.03] px-2.5 py-1 text-[11px] font-medium text-[var(--fg-muted)] transition hover:border-[#7c8cff]/50 hover:bg-[#7c8cff]/10 hover:text-[#cdd4ff]"
+        className="group inline-flex max-w-full items-center gap-1.5 rounded-full border border-[var(--border)] bg-white px-2.5 py-1 text-[11px] font-medium text-[var(--fg-muted)] transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
         onClick={toggle}
         type="button"
       >
         <FileText aria-hidden="true" className="h-3 w-3 shrink-0" />
-        <span className="max-w-[180px] truncate">{source.file_name}</span>
-        <span className="rounded-sm bg-white/5 px-1 font-mono text-[10px] text-[var(--fg-dim)] group-hover:text-[var(--fg-muted)]">
+        <span className="max-w-[200px] truncate">{source.file_name}</span>
+        <span className="rounded-sm bg-[var(--bg-soft)] px-1 font-mono text-[10px] text-[var(--fg-dim)] group-hover:bg-white">
           {locatorLabel(source.locator)}
         </span>
         <ChevronDown
@@ -261,22 +259,22 @@ function CitationChip({ source }: { source: Source }) {
       </button>
 
       {open ? (
-        <div className="fade-up mt-2 rounded-md border border-[var(--border)] bg-black/40 p-3">
+        <div className="fade-up mt-2 rounded-md border border-[var(--border)] bg-[var(--bg-soft)] p-3">
           {loading ? (
             <div className="space-y-2">
-              <div className="h-3 w-4/5 rounded bg-white/5 shimmer" />
-              <div className="h-3 w-3/5 rounded bg-white/5 shimmer" />
-              <div className="h-3 w-2/3 rounded bg-white/5 shimmer" />
+              <div className="h-3 w-4/5 rounded bg-white shimmer" />
+              <div className="h-3 w-3/5 rounded bg-white shimmer" />
+              <div className="h-3 w-2/3 rounded bg-white shimmer" />
             </div>
           ) : error ? (
-            <p className="text-xs text-[#ff97a7]">{error}</p>
+            <p className="text-xs text-rose-700">{error}</p>
           ) : (
             <div className="flex gap-2.5">
               <Quote
                 aria-hidden="true"
-                className="h-3.5 w-3.5 shrink-0 text-[#7c8cff]"
+                className="h-3.5 w-3.5 shrink-0 text-indigo-500"
               />
-              <p className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-[var(--fg-muted)]">
+              <p className="whitespace-pre-wrap font-mono text-[11.5px] leading-relaxed text-[var(--fg)]">
                 {text}
               </p>
             </div>
@@ -308,18 +306,18 @@ function SectionHeader({
         >
           {icon}
         </span>
-        <h3 className="text-sm font-semibold tracking-wide text-[var(--fg)]">
+        <h3 className="text-[14px] font-semibold tracking-tight text-[var(--fg-strong)]">
           {title}
         </h3>
       </div>
-      <span className="rounded-full border border-[var(--border-strong)] bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] text-[var(--fg-muted)]">
+      <span className="rounded-full border border-[var(--border)] bg-white px-2 py-0.5 font-mono text-[10px] text-[var(--fg-muted)]">
         {count.toString().padStart(2, "0")}
       </span>
     </div>
   );
 }
 
-/** Render the list of claims for a blueprint subsection, with citations. */
+/** A blueprint subsection (steps / systems / metrics / risks). */
 function ClaimList({
   title,
   claims,
@@ -352,9 +350,9 @@ function ClaimList({
               >
                 {index + 1}
               </span>
-              <p className="flex-1 text-[13.5px] leading-6 text-[var(--fg)]">
-                {claim.text}
-              </p>
+              <div className="flex-1 min-w-0">
+                <Markdown compact source={claim.text} />
+              </div>
             </div>
             {claim.sources.length > 0 ? (
               <div className="mt-3 grid gap-2 pl-8">
@@ -373,7 +371,7 @@ function ClaimList({
   );
 }
 
-/** Small step number for the empty-state hero. */
+/** Empty-state pipeline-step row. */
 function HeroStep({
   n,
   label,
@@ -385,10 +383,10 @@ function HeroStep({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border-strong)] bg-white/[0.03] font-mono text-[11px] text-[var(--fg-muted)]">
+      <span className="flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border)] bg-white font-mono text-[11px] text-[var(--fg-muted)]">
         {n}
       </span>
-      <span className="flex items-center gap-1.5 text-[12px] text-[var(--fg-muted)]">
+      <span className="flex items-center gap-1.5 text-[12.5px] text-[var(--fg-muted)]">
         {icon}
         {label}
       </span>
@@ -396,24 +394,24 @@ function HeroStep({
   );
 }
 
-/** Choose an emoji-free icon + color per event level / terminal type. */
+/** Choose icon + tone class per event level / terminal type. */
 function eventVisual(event: RunEvent): { icon: ReactNode; tone: string } {
   if (event.level === "error" || event.type === "run_failed") {
     return {
       icon: <AlertCircle aria-hidden="true" className="h-3.5 w-3.5" />,
-      tone: "text-[#ff97a7]",
+      tone: "text-rose-600",
     };
   }
   if (event.level === "warning") {
     return {
       icon: <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5" />,
-      tone: "text-[#ffd29a]",
+      tone: "text-amber-600",
     };
   }
   if (event.type === "run_completed") {
     return {
       icon: <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />,
-      tone: "text-[#7ee0d8]",
+      tone: "text-teal-600",
     };
   }
   return {
@@ -442,7 +440,7 @@ export function DiagnosticWorkspace() {
   const [elapsed, setElapsed] = useState(0);
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
 
-  /** Live elapsed-time counter while a run is in flight. */
+  /** Tick a live elapsed-time counter while a run is in flight. */
   useEffect(() => {
     if (status !== "uploading" && status !== "running") return;
     if (runStartedAt == null) return;
@@ -481,7 +479,7 @@ export function DiagnosticWorkspace() {
     );
   }, [blueprint]);
 
-  /** Merge newly chosen files into the queue (de-dup by name+size+mtime). */
+  /** Merge newly-chosen files into the queue (de-dup by name+size+mtime). */
   function addFiles(incoming: File[]) {
     setSelectedFiles((prev) => {
       const key = (f: File) => `${f.name}-${f.size}-${f.lastModified}`;
@@ -491,13 +489,13 @@ export function DiagnosticWorkspace() {
     setMessage(null);
   }
 
-  /** Read files from the native input element. */
+  /** Native input change handler. */
   function onFileChange(event: ChangeEvent<HTMLInputElement>) {
     addFiles(Array.from(event.target.files ?? []));
     event.target.value = "";
   }
 
-  /** Allow dropping anywhere inside the dropzone wrapper. */
+  /** Drop zone handler. */
   function onDrop(event: DragEvent<HTMLLabelElement>) {
     event.preventDefault();
     setDragOver(false);
@@ -518,7 +516,7 @@ export function DiagnosticWorkspace() {
     );
   }
 
-  /** Upload queued files, kick off the run, stream events, fetch blueprint. */
+  /** Upload queued files, kick off the run, stream events, then fetch blueprint. */
   async function onStartRun() {
     if (selectedFiles.length === 0) return;
 
@@ -576,14 +574,14 @@ export function DiagnosticWorkspace() {
   return (
     <main className="relative z-10 min-h-screen text-[var(--fg)]">
       {/* Top bar */}
-      <header className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--bg-base)]/70 backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between gap-4 px-6 py-3.5">
+      <header className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--bg-base)]/80 backdrop-blur-xl">
+        <div className="mx-auto flex w-full max-w-[1800px] items-center justify-between gap-4 px-6 py-3.5 xl:px-10">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-[#7c8cff] to-[#4ecdc4] shadow-[0_8px_24px_-12px_rgba(124,140,255,0.6)]">
-              <Sparkles aria-hidden="true" className="h-4.5 w-4.5 text-[#0a0c14]" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-teal-400 shadow-[0_8px_24px_-12px_rgba(79,70,229,0.5)]">
+              <Sparkles aria-hidden="true" className="h-4.5 w-4.5 text-white" />
             </div>
             <div className="flex flex-col leading-tight">
-              <span className="text-[15px] font-semibold tracking-tight text-[var(--fg)]">
+              <span className="text-[15px] font-semibold tracking-tight text-[var(--fg-strong)]">
                 Ops Diagnostic Agent
               </span>
               <span className="text-[11px] uppercase tracking-[0.18em] text-[var(--fg-dim)]">
@@ -600,22 +598,22 @@ export function DiagnosticWorkspace() {
             <span
               className={`chip ${
                 isWorking
-                  ? "border-[#7c8cff]/40 text-[#a6b1ff]"
+                  ? "border-indigo-300 text-indigo-700"
                   : status === "complete"
-                    ? "border-[#4ecdc4]/40 text-[#7ee0d8]"
+                    ? "border-teal-300 text-teal-700"
                     : status === "error"
-                      ? "border-[#ff6b80]/40 text-[#ff97a7]"
+                      ? "border-rose-300 text-rose-700"
                       : ""
               }`}
             >
               <span
                 className={`pulse-dot inline-block h-1.5 w-1.5 rounded-full ${
                   isWorking
-                    ? "bg-[#7c8cff] text-[#7c8cff]"
+                    ? "bg-indigo-500 text-indigo-500"
                     : status === "complete"
-                      ? "bg-[#4ecdc4] text-[#4ecdc4]"
+                      ? "bg-teal-500 text-teal-500"
                       : status === "error"
-                        ? "bg-[#ff6b80] text-[#ff6b80]"
+                        ? "bg-rose-500 text-rose-500"
                         : "bg-[var(--fg-dim)] text-transparent"
                 }`}
               />
@@ -631,14 +629,14 @@ export function DiagnosticWorkspace() {
         </div>
       </header>
 
-      <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-6 px-6 py-8">
+      <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-6 px-6 py-8 xl:px-10">
         {message ? (
-          <div className="fade-up flex items-start gap-3 rounded-lg border border-[#ff6b80]/40 bg-[#ff6b80]/[0.08] px-4 py-3 text-sm text-[#ffb3bf]">
+          <div className="fade-up flex items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
             <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
             <p className="flex-1">{message}</p>
             <button
               aria-label="Dismiss"
-              className="text-[#ffb3bf]/80 hover:text-white"
+              className="text-rose-700/80 hover:text-rose-900"
               onClick={() => setMessage(null)}
               type="button"
             >
@@ -647,18 +645,19 @@ export function DiagnosticWorkspace() {
           </div>
         ) : null}
 
-        <div className="grid gap-6 lg:grid-cols-[400px_1fr]">
+        {/* 3-column layout: left rail | center blueprint | right rail */}
+        <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)_360px]">
           {/* LEFT RAIL */}
-          <aside className="flex flex-col gap-5">
+          <aside className="flex flex-col gap-5 xl:sticky xl:top-[88px] xl:self-start">
             {/* Intake */}
             <div className="card p-5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[#7c8cff]/15 text-[#a6b1ff]">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-indigo-50 text-indigo-700">
                     <Upload aria-hidden="true" className="h-4 w-4" />
                   </span>
-                  <h2 className="text-[15px] font-semibold tracking-tight">
-                    Intake evidence
+                  <h2 className="text-[15px] font-semibold tracking-tight text-[var(--fg-strong)]">
+                    Intake
                   </h2>
                 </div>
                 {selectedFiles.length > 0 ? (
@@ -666,14 +665,14 @@ export function DiagnosticWorkspace() {
                 ) : null}
               </div>
               <p className="mt-1.5 text-[12.5px] text-[var(--fg-muted)]">
-                PDF, DOCX, transcripts, CSV, XLSX, MBOX, JSON, MD, or TXT.
+                PDF · DOCX · transcripts · CSV · XLSX · MBOX · JSON · MD · TXT
               </p>
 
               <label
-                className={`mt-4 flex min-h-[148px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-6 text-center transition ${
+                className={`mt-4 flex min-h-[140px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-6 text-center transition ${
                   dragOver
-                    ? "border-[#7c8cff] bg-[#7c8cff]/10"
-                    : "border-[var(--border-strong)] bg-white/[0.015] hover:border-[#7c8cff]/50 hover:bg-[#7c8cff]/[0.04]"
+                    ? "border-indigo-400 bg-indigo-50"
+                    : "border-[var(--border-strong)] bg-[var(--bg-soft)]/40 hover:border-indigo-300 hover:bg-indigo-50/60"
                 }`}
                 onDragLeave={() => setDragOver(false)}
                 onDragOver={(e) => {
@@ -682,10 +681,10 @@ export function DiagnosticWorkspace() {
                 }}
                 onDrop={onDrop}
               >
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#7c8cff]/15 text-[#a6b1ff]">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
                   <Upload aria-hidden="true" className="h-5 w-5" />
                 </span>
-                <span className="text-[13px] font-medium text-[var(--fg)]">
+                <span className="text-[13px] font-medium text-[var(--fg-strong)]">
                   Drop files or click to browse
                 </span>
                 <span className="text-[11px] text-[var(--fg-dim)]">
@@ -703,14 +702,14 @@ export function DiagnosticWorkspace() {
                 <ul className="mt-3 grid gap-1.5">
                   {selectedFiles.map((file) => (
                     <li
-                      className="flex items-center gap-2.5 rounded-md border border-[var(--border)] bg-white/[0.02] px-2.5 py-2"
+                      className="flex items-center gap-2.5 rounded-md border border-[var(--border)] bg-[var(--bg-soft)]/40 px-2.5 py-2"
                       key={`${file.name}-${file.lastModified}`}
                     >
                       <FileText
                         aria-hidden="true"
                         className="h-3.5 w-3.5 shrink-0 text-[var(--fg-dim)]"
                       />
-                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--fg)]">
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--fg-strong)]">
                         {file.name}
                       </span>
                       <span className="shrink-0 font-mono text-[10.5px] text-[var(--fg-dim)]">
@@ -718,7 +717,7 @@ export function DiagnosticWorkspace() {
                       </span>
                       <button
                         aria-label={`Remove ${file.name}`}
-                        className="rounded p-0.5 text-[var(--fg-dim)] hover:bg-white/5 hover:text-[#ff97a7]"
+                        className="rounded p-0.5 text-[var(--fg-dim)] hover:bg-rose-50 hover:text-rose-600"
                         disabled={isWorking}
                         onClick={() => removeFile(file)}
                         type="button"
@@ -747,7 +746,7 @@ export function DiagnosticWorkspace() {
                 {status === "complete" || status === "error" ? (
                   <button
                     aria-label="Reset workspace"
-                    className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-[var(--border-strong)] bg-white/[0.02] text-[var(--fg-muted)] transition hover:border-[var(--border-strong)] hover:bg-white/5 hover:text-[var(--fg)]"
+                    className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-[var(--border)] bg-white text-[var(--fg-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--fg-strong)]"
                     onClick={resetAll}
                     type="button"
                   >
@@ -761,15 +760,15 @@ export function DiagnosticWorkspace() {
             <div className="card p-5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[#4ecdc4]/15 text-[#7ee0d8]">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-50 text-teal-700">
                     <Workflow aria-hidden="true" className="h-4 w-4" />
                   </span>
-                  <h2 className="text-[15px] font-semibold tracking-tight">
+                  <h2 className="text-[15px] font-semibold tracking-tight text-[var(--fg-strong)]">
                     Pipeline
                   </h2>
                 </div>
                 {isWorking ? (
-                  <span className="chip border-[#7c8cff]/30 text-[#a6b1ff]">
+                  <span className="chip border-indigo-300 text-indigo-700">
                     <Loader2 aria-hidden="true" className="h-3 w-3 animate-spin" />
                     {Math.floor(elapsed / 60)}:
                     {String(elapsed % 60).padStart(2, "0")}
@@ -780,16 +779,16 @@ export function DiagnosticWorkspace() {
               <ol className="mt-4 grid gap-2.5">
                 {timeline.map((step, idx) => (
                   <li
-                    className="relative flex items-start gap-3 rounded-md border border-transparent px-2 py-2 transition"
+                    className="relative flex items-start gap-3 rounded-md px-1 py-1.5"
                     key={step.label}
                   >
                     <span
                       className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
                         step.state === "done"
-                          ? "bg-[#4ecdc4]/20 text-[#7ee0d8]"
+                          ? "bg-teal-100 text-teal-700"
                           : step.state === "active"
-                            ? "bg-[#7c8cff]/20 text-[#a6b1ff]"
-                            : "border border-[var(--border-strong)] text-[var(--fg-dim)]"
+                            ? "bg-indigo-100 text-indigo-700"
+                            : "border border-[var(--border)] bg-white text-[var(--fg-dim)]"
                       }`}
                     >
                       {step.state === "done" ? (
@@ -805,7 +804,7 @@ export function DiagnosticWorkspace() {
                         className={`text-[13px] font-medium ${
                           step.state === "waiting"
                             ? "text-[var(--fg-muted)]"
-                            : "text-[var(--fg)]"
+                            : "text-[var(--fg-strong)]"
                         }`}
                       >
                         {step.label}
@@ -814,7 +813,7 @@ export function DiagnosticWorkspace() {
                         {step.hint}
                       </p>
                       {step.state === "active" ? (
-                        <div className="mt-2 h-[2px] w-full overflow-hidden rounded bg-white/5">
+                        <div className="mt-2 h-[2px] w-full overflow-hidden rounded bg-indigo-100">
                           <div className="h-full w-1/3 rounded shimmer" />
                         </div>
                       ) : null}
@@ -824,19 +823,21 @@ export function DiagnosticWorkspace() {
               </ol>
 
               {run ? (
-                <div className="mt-4 grid gap-1.5 rounded-md border border-[var(--border)] bg-black/30 p-3 font-mono text-[11px]">
+                <div className="mt-4 grid gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-soft)] p-3 font-mono text-[11px]">
                   <div className="flex items-center justify-between">
                     <span className="text-[var(--fg-dim)]">run_id</span>
-                    <span className="truncate text-[var(--fg)]">{run.run_id}</span>
+                    <span className="truncate text-[var(--fg-strong)]">
+                      {run.run_id}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-[var(--fg-dim)]">status</span>
-                    <span className="text-[var(--fg)]">{run.status}</span>
+                    <span className="text-[var(--fg-strong)]">{run.status}</span>
                   </div>
                   {run.langfuse_trace_id ? (
                     <div className="flex items-center justify-between">
                       <span className="text-[var(--fg-dim)]">trace</span>
-                      <span className="truncate text-[var(--fg)]">
+                      <span className="truncate text-[var(--fg-strong)]">
                         {run.langfuse_trace_id}
                       </span>
                     </div>
@@ -844,164 +845,62 @@ export function DiagnosticWorkspace() {
                 </div>
               ) : null}
             </div>
-
-            {/* Live events */}
-            <div className="card p-5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[#ffb86b]/15 text-[#ffd29a]">
-                    <Radio aria-hidden="true" className="h-4 w-4" />
-                  </span>
-                  <h2 className="text-[15px] font-semibold tracking-tight">
-                    Live events
-                  </h2>
-                </div>
-                <span className="chip">
-                  <Activity aria-hidden="true" className="h-3 w-3" />
-                  {runEvents.length}
-                </span>
-              </div>
-
-              <div
-                aria-live="polite"
-                className="mt-3 max-h-[360px] space-y-1.5 overflow-y-auto pr-1"
-              >
-                {runEvents.length === 0 ? (
-                  <p className="rounded-md border border-dashed border-[var(--border-strong)] bg-white/[0.015] p-4 text-center text-[12px] text-[var(--fg-dim)]">
-                    Run updates will stream here in real time.
-                  </p>
-                ) : (
-                  [...runEvents].reverse().map((event) => {
-                    const v = eventVisual(event);
-                    return (
-                      <div
-                        className="fade-up flex items-start gap-2.5 rounded-md border border-[var(--border)] bg-white/[0.015] px-2.5 py-2 text-[12px]"
-                        key={`${event.run_id}-${event.seq}`}
-                      >
-                        <span className={`mt-0.5 ${v.tone}`}>{v.icon}</span>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[var(--fg)]">{event.message}</p>
-                          <div className="mt-0.5 flex items-center gap-2 font-mono text-[10px] text-[var(--fg-dim)]">
-                            <span>{shortTime(event.timestamp)}</span>
-                            <span>·</span>
-                            <span className="truncate">{event.stage}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
           </aside>
 
-          {/* RIGHT CANVAS */}
-          <section className="flex flex-col gap-6">
-            {/* Parsed evidence row */}
-            {uploadedFiles.length > 0 ? (
-              <div className="fade-up card p-5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[#7c8cff]/15 text-[#a6b1ff]">
-                      <Layers aria-hidden="true" className="h-4 w-4" />
-                    </span>
-                    <h2 className="text-[15px] font-semibold tracking-tight">
-                      Parsed evidence
-                    </h2>
-                  </div>
-                  <span className="chip">
-                    {uploadedFiles.length} file{uploadedFiles.length === 1 ? "" : "s"}
-                  </span>
-                </div>
-                <div className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-                  {uploadedFiles.map((file) => (
-                    <article
-                      className="group flex items-start gap-3 rounded-md border border-[var(--border)] bg-white/[0.02] p-3 transition hover:border-[var(--border-strong)] hover:bg-white/[0.04]"
-                      key={file.file_id}
-                    >
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[#4ecdc4]/12 text-[#7ee0d8]">
-                        <FileText aria-hidden="true" className="h-4 w-4" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-medium text-[var(--fg)]">
-                          {file.file_name}
-                        </p>
-                        <p className="mt-0.5 truncate font-mono text-[10.5px] text-[var(--fg-dim)]">
-                          {file.mime_type}
-                        </p>
-                      </div>
-                      <span
-                        className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                          file.parser_status === "ok"
-                            ? "border-[#4ecdc4]/30 bg-[#4ecdc4]/10 text-[#7ee0d8]"
-                            : file.parser_status === "error"
-                              ? "border-[#ff6b80]/30 bg-[#ff6b80]/10 text-[#ff97a7]"
-                              : "border-[var(--border-strong)] bg-white/[0.03] text-[var(--fg-muted)]"
-                        }`}
-                      >
-                        {file.parser_status}
-                      </span>
-                    </article>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {/* Blueprint */}
+          {/* CENTER — BLUEPRINT */}
+          <section className="min-w-0">
             <div className="card overflow-hidden p-0">
               {blueprint ? (
                 <div className="fade-up">
                   {/* Blueprint hero */}
-                  <div className="relative border-b border-[var(--border)] bg-gradient-to-br from-[#7c8cff]/[0.08] via-transparent to-[#4ecdc4]/[0.06] p-6">
+                  <div className="relative border-b border-[var(--border)] bg-gradient-to-br from-indigo-50 via-white to-teal-50 p-6 lg:p-8">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="flex items-center gap-3">
-                        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-[#7c8cff] to-[#4ecdc4] shadow-[0_8px_24px_-12px_rgba(124,140,255,0.6)]">
-                          <Zap aria-hidden="true" className="h-5 w-5 text-[#0a0c14]" />
+                        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-teal-400 shadow-[0_10px_24px_-10px_rgba(79,70,229,0.55)]">
+                          <Zap aria-hidden="true" className="h-5 w-5 text-white" />
                         </span>
                         <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--fg-dim)]">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--fg-dim)]">
                             Automation Blueprint
                           </p>
-                          <h2 className="mt-0.5 text-[18px] font-semibold tracking-tight text-[var(--fg)]">
+                          <h2 className="mt-0.5 text-[20px] font-semibold tracking-tight text-[var(--fg-strong)]">
                             Opportunity #{blueprint.opportunity_ref}
                           </h2>
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="chip border-[#7c8cff]/30 text-[#a6b1ff]">
+                        <span className="chip border-indigo-200 text-indigo-700">
                           <Target aria-hidden="true" className="h-3 w-3" />
                           {totalClaims} claims
                         </span>
-                        <span className="chip border-[#4ecdc4]/30 text-[#7ee0d8]">
+                        <span className="chip border-teal-200 text-teal-700">
                           <Quote aria-hidden="true" className="h-3 w-3" />
                           {totalCitations} citations
                         </span>
-                        <span className="chip border-[#ffb86b]/30 text-[#ffd29a]">
+                        <span className="chip border-amber-200 text-amber-700">
                           <Gauge aria-hidden="true" className="h-3 w-3" />
-                          {uploadedFiles.length} source{uploadedFiles.length === 1 ? "" : "s"}
+                          {uploadedFiles.length} source
+                          {uploadedFiles.length === 1 ? "" : "s"}
                         </span>
                       </div>
                     </div>
 
-                    <p className="mt-5 text-[15px] leading-7 text-[var(--fg)]">
-                      {blueprint.summary.text}
-                    </p>
-                    {blueprint.summary.sources.length > 0 ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {blueprint.summary.sources.map((source, idx) => (
-                          <CitationChip
-                            key={`summary-${idx}`}
-                            source={source}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
+                    <div className="mt-6 rounded-lg border border-[var(--border)] bg-white/70 p-5 backdrop-blur">
+                      <Markdown source={blueprint.summary.text} />
+                      {blueprint.summary.sources.length > 0 ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {blueprint.summary.sources.map((source, idx) => (
+                            <CitationChip key={`summary-${idx}`} source={source} />
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
 
                   {/* Bento grid of sections */}
-                  <div className="grid gap-5 p-6 lg:grid-cols-2">
+                  <div className="grid gap-6 p-6 lg:grid-cols-2 lg:p-8">
                     <ClaimList
-                      accent="violet"
+                      accent="indigo"
                       claims={blueprint.steps}
                       icon={<ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />}
                       title="Implementation steps"
@@ -1027,35 +926,34 @@ export function DiagnosticWorkspace() {
                   </div>
                 </div>
               ) : (
-                <div className="flex min-h-[520px] flex-col items-center justify-center gap-6 p-10 text-center">
+                <div className="flex min-h-[600px] flex-col items-center justify-center gap-6 p-10 text-center">
                   <div className="relative">
-                    <div className="absolute inset-0 -z-10 rounded-full bg-gradient-to-br from-[#7c8cff]/20 to-[#4ecdc4]/20 blur-2xl" />
-                    <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-[var(--border-strong)] bg-gradient-to-br from-[#11141b] to-[#0d0f14]">
+                    <div className="absolute inset-0 -z-10 rounded-full bg-gradient-to-br from-indigo-200/60 to-teal-200/60 blur-2xl" />
+                    <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-[var(--border)] bg-white">
                       {isWorking ? (
                         <Loader2
                           aria-hidden="true"
-                          className="h-8 w-8 animate-spin text-[#a6b1ff]"
+                          className="h-8 w-8 animate-spin text-indigo-600"
                         />
                       ) : (
                         <Sparkles
                           aria-hidden="true"
-                          className="h-8 w-8 text-[#a6b1ff]"
+                          className="h-8 w-8 text-indigo-600"
                         />
                       )}
                     </div>
                   </div>
 
                   <div className="max-w-md space-y-2">
-                    <h3 className="text-[18px] font-semibold tracking-tight">
+                    <h3 className="text-[20px] font-semibold tracking-tight text-[var(--fg-strong)]">
                       {isWorking
                         ? "Synthesizing your blueprint…"
                         : "Your cited blueprint will land here"}
                     </h3>
-                    <p className="text-[13.5px] leading-6 text-[var(--fg-muted)]">
+                    <p className="text-[14px] leading-7 text-[var(--fg-muted)]">
                       Upload operational evidence — meeting transcripts, ops docs,
-                      CSV extracts, MBOX threads — and the agent will produce a
-                      step-by-step automation plan where every claim round-trips
-                      to its source.
+                      CSV extracts, MBOX threads — and the agent produces a step-by-step
+                      automation plan where every claim round-trips to its source.
                     </p>
                   </div>
 
@@ -1085,20 +983,124 @@ export function DiagnosticWorkspace() {
               )}
             </div>
           </section>
+
+          {/* RIGHT RAIL */}
+          <aside className="flex flex-col gap-5 xl:sticky xl:top-[88px] xl:self-start">
+            {/* Parsed evidence */}
+            <div className="card p-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-indigo-50 text-indigo-700">
+                    <Layers aria-hidden="true" className="h-4 w-4" />
+                  </span>
+                  <h2 className="text-[15px] font-semibold tracking-tight text-[var(--fg-strong)]">
+                    Parsed evidence
+                  </h2>
+                </div>
+                <span className="chip">
+                  {uploadedFiles.length} file{uploadedFiles.length === 1 ? "" : "s"}
+                </span>
+              </div>
+
+              {uploadedFiles.length === 0 ? (
+                <p className="mt-4 rounded-md border border-dashed border-[var(--border-strong)] bg-[var(--bg-soft)]/40 p-4 text-center text-[12px] text-[var(--fg-dim)]">
+                  Parsed file metadata appears here once uploads complete.
+                </p>
+              ) : (
+                <ul className="mt-4 grid gap-2 max-h-[280px] overflow-y-auto pr-1">
+                  {uploadedFiles.map((file) => (
+                    <li
+                      className="flex items-start gap-2.5 rounded-md border border-[var(--border)] bg-white p-2.5"
+                      key={file.file_id}
+                    >
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-teal-50 text-teal-700">
+                        <FileText aria-hidden="true" className="h-3.5 w-3.5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[12.5px] font-medium text-[var(--fg-strong)]">
+                          {file.file_name}
+                        </p>
+                        <p className="mt-0.5 truncate font-mono text-[10.5px] text-[var(--fg-dim)]">
+                          {file.mime_type}
+                        </p>
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                          file.parser_status === "ok"
+                            ? "border-teal-200 bg-teal-50 text-teal-700"
+                            : file.parser_status === "error"
+                              ? "border-rose-200 bg-rose-50 text-rose-700"
+                              : "border-[var(--border)] bg-[var(--bg-soft)] text-[var(--fg-muted)]"
+                        }`}
+                      >
+                        {file.parser_status}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Live events */}
+            <div className="card p-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-amber-50 text-amber-700">
+                    <Radio aria-hidden="true" className="h-4 w-4" />
+                  </span>
+                  <h2 className="text-[15px] font-semibold tracking-tight text-[var(--fg-strong)]">
+                    Live events
+                  </h2>
+                </div>
+                <span className="chip">
+                  <Activity aria-hidden="true" className="h-3 w-3" />
+                  {runEvents.length}
+                </span>
+              </div>
+
+              <div
+                aria-live="polite"
+                className="mt-3 max-h-[480px] space-y-1.5 overflow-y-auto pr-1"
+              >
+                {runEvents.length === 0 ? (
+                  <p className="rounded-md border border-dashed border-[var(--border-strong)] bg-[var(--bg-soft)]/40 p-4 text-center text-[12px] text-[var(--fg-dim)]">
+                    Run updates will stream here in real time.
+                  </p>
+                ) : (
+                  [...runEvents].reverse().map((event) => {
+                    const v = eventVisual(event);
+                    return (
+                      <div
+                        className="fade-up flex items-start gap-2.5 rounded-md border border-[var(--border)] bg-white px-2.5 py-2 text-[12px]"
+                        key={`${event.run_id}-${event.seq}`}
+                      >
+                        <span className={`mt-0.5 ${v.tone}`}>{v.icon}</span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[var(--fg-strong)]">
+                            {event.message}
+                          </p>
+                          <div className="mt-0.5 flex items-center gap-2 font-mono text-[10px] text-[var(--fg-dim)]">
+                            <span>{shortTime(event.timestamp)}</span>
+                            <span>·</span>
+                            <span className="truncate">{event.stage}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </aside>
         </div>
 
         <footer className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] pt-5 text-[11px] text-[var(--fg-dim)]">
           <span>
             Built with FastAPI · LangGraph · Redis Stack · Ollama / OpenAI / Groq
           </span>
-          <span className="font-mono">
-            v0.1 · {new Date().getFullYear()}
-          </span>
+          <span className="font-mono">v0.2 · {new Date().getFullYear()}</span>
         </footer>
       </div>
     </main>
   );
 }
-
-/* Keep Fragment imported for future composition; export nothing else. */
-export { Fragment };
