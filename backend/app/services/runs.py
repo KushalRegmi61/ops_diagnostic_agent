@@ -226,6 +226,23 @@ def start_run(
             has_blueprint=final_state.get("blueprint") is not None,
         )
 
+    errors = final_state.get("errors") or []
+    if errors:
+        logger.warning(
+            "run.errors.summary",
+            error_count=len(errors),
+            stages=sorted({e.stage for e in errors}),
+        )
+        _emit(
+            on_event,
+            "run_errors_summary",
+            f"{len(errors)} structured error(s) recorded",
+            "complete",
+            "warning",
+            error_count=len(errors),
+            stages=sorted({e.stage for e in errors}),
+        )
+
     # Persist file summaries.
     file_summary_count = 0
     for file_id, summary in (final_state.get("file_summaries") or {}).items():

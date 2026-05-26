@@ -30,7 +30,7 @@ from app.agents.lead import (
 from app.llm.base import LLMProvider
 from app.observability import node_span
 from app.registry import get_agent_module
-from app.schemas import IntakeBundle, ParsedFile
+from app.schemas import ExtractionError, IntakeBundle, ParsedFile
 from app.state import DiagnosticState
 from app.structured_logging import get_logger
 
@@ -387,6 +387,11 @@ def build_graph(
         """Produce the cited Blueprint; on a revision pass, feeds final_review.detail back in."""
         sel = state["selected"]
         if sel is None:
+            err = ExtractionError(
+                file_id="",
+                stage="solution_blueprint",
+                message="no opportunity selected; cannot build blueprint",
+            )
             logger.warning("graph.node.skipped", node="solution_blueprint", reason="no_selected_opportunity")
             emit(
                 "graph_node_skipped",
@@ -396,7 +401,9 @@ def build_graph(
                 node="solution_blueprint",
                 reason="no_selected_opportunity",
             )
-            return {"blueprint": None}
+            existing = list(state.get("errors") or [])
+            existing.append(err)
+            return {"blueprint": None, "errors": existing}
         b = state["bundle"]
         assert isinstance(b, IntakeBundle)
         idx = state["opportunities"].index(sel)
@@ -433,6 +440,11 @@ def build_graph(
         """Run self_review_final — deterministic citation existence/reachability gates plus LLM consistency check."""
         bp = state["blueprint"]
         if bp is None:
+            err = ExtractionError(
+                file_id="",
+                stage="self_review_final",
+                message="no blueprint produced; cannot self-review",
+            )
             logger.warning("graph.node.skipped", node="self_review_final", reason="no_blueprint")
             emit(
                 "graph_node_skipped",
@@ -442,7 +454,9 @@ def build_graph(
                 node="self_review_final",
                 reason="no_blueprint",
             )
-            return {"final_review": None}
+            existing = list(state.get("errors") or [])
+            existing.append(err)
+            return {"final_review": None, "errors": existing}
         sel = state["selected"]
         b = state["bundle"]
         assert sel is not None and isinstance(b, IntakeBundle)
