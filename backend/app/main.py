@@ -8,7 +8,7 @@ Sits at the top of the pipeline: HTTP -> services -> graph -> agents -> parsers.
 from contextlib import asynccontextmanager
 import asyncio
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -173,8 +173,19 @@ def _run_event_emitter(run_id: str):
     return emit
 
 
-def _start_run_background(run_id: str) -> None:
-    """Run the diagnostic graph after POST /api/runs has returned."""
+_run_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_run_semaphore() -> asyncio.Semaphore:
+    """Lazily build the module-level dispatch semaphore from current Settings."""
+    global _run_semaphore
+    if _run_semaphore is None:
+        _run_semaphore = asyncio.Semaphore(get_settings().max_concurrent_runs)
+    return _run_semaphore
+
+
+def _start_run_sync(run_id: str) -> None:
+    """Sync body executed inside a worker thread (acquires no event loop)."""
     db = SessionLocal()
     emit = _run_event_emitter(run_id)
     try:
@@ -199,13 +210,24 @@ def _start_run_background(run_id: str) -> None:
         db.close()
 
 
+async def _start_run_dispatch(run_id: str) -> None:
+    """Acquire the concurrency semaphore and run start_run in a worker thread."""
+    sem = _get_run_semaphore()
+    async with sem:
+        await asyncio.to_thread(_start_run_sync, run_id)
+
+
 @app.post("/api/runs", response_model=RunResponse)
-def post_run(
+async def post_run(
     body: CreateRunRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> RunResponse:
-    """Create a run, link files, and start the diagnostic graph in the background."""
+    """Create a run, link files, and start the diagnostic graph in the background.
+
+    Dispatches work via asyncio.create_task → _start_run_dispatch, which gates
+    concurrent executions with a module-level Semaphore sized by max_concurrent_runs.
+    Single-process scope only; multi-worker deployments need an external queue.
+    """
     clear_context()
     logger.info("http.run_create.started", file_count=len(body.file_ids), file_ids=body.file_ids)
     if not body.file_ids:
@@ -227,7 +249,7 @@ def post_run(
         stage="queued",
         data={"file_count": len(body.file_ids), "file_ids": body.file_ids},
     )
-    background_tasks.add_task(_start_run_background, run_id)
+    asyncio.create_task(_start_run_dispatch(run_id))
     logger.info("http.run_create.queued", run_id=run_id, status=run.status)
     return RunResponse(run_id=run_id, status=run.status, langfuse_trace_id=run.langfuse_trace_id)
 

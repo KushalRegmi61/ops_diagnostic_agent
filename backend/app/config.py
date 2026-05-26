@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: Literal["console", "json"] = "console"
 
+    # Background runs
+    max_concurrent_runs: int = 2
+
     # Upload safety
     max_upload_mb: int = 50
 
