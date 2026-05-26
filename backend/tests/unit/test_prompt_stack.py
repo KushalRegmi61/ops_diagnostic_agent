@@ -83,17 +83,18 @@ def test_only_solution_blueprint_declares_tone():
             assert "Tone:" not in prompt
 
 
-def test_solution_blueprint_prompt_demands_depth():
-    """Blueprint prompt asks for research-depth output, not one-line claims."""
+def test_solution_blueprint_prompt_demands_concise_markdown():
+    """Blueprint prompt asks for terse bold-lead markdown, not prose paragraphs."""
     prompt = solution_blueprint.PROMPT
 
-    assert "100-200 words" in prompt
-    assert "5-8 ordered implementation steps" in prompt
-    assert "2-4 sentences" in prompt
-    assert "Technical requirements" in prompt
-    assert "auth/permissions" in prompt
-    assert "baseline/target" in prompt
-    assert "Avoid shallow one-line claims" in prompt
+    assert "≤40 words" in prompt
+    assert "≤80 words" in prompt
+    assert "bold lead" in prompt.lower()
+    assert "Avoid prose paragraphs" in prompt
+    assert "Avoid restating context across claims" in prompt
+    # citation invariants preserved
+    assert "Avoid bare source strings" in prompt
+    assert "Avoid hallucinating" in prompt
 
 
 @pytest.mark.parametrize(
