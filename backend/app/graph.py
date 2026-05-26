@@ -328,7 +328,18 @@ def build_graph(
     def workflow_map_node(state: DiagnosticState) -> dict:
         """Map the bundle into structured WorkflowRecords."""
         b = state["bundle"]
-        assert isinstance(b, IntakeBundle)
+        if not isinstance(b, IntakeBundle):
+            err = ExtractionError(
+                file_id="",
+                stage="workflow_map",
+                message="bundle is None at node entry — upstream synthesis failed",
+            )
+            logger.error("graph.node.failed", node="workflow_map", reason="missing_bundle")
+            emit("graph_node_failed", "workflow_map skipped: missing bundle", "diagnose", "error",
+                 node="workflow_map", reason="missing_bundle")
+            existing = list(state.get("errors") or [])
+            existing.append(err)
+            return {"workflows": [], "errors": existing}
         started = time.perf_counter()
         logger.info("graph.node.started", node="workflow_map", bundle_workflow_count=len(b.workflows))
         emit("graph_node_started", "Mapping workflows", "diagnose", node="workflow_map")
@@ -362,7 +373,18 @@ def build_graph(
     def bottleneck_detect_node(state: DiagnosticState) -> dict:
         """Detect Bottlenecks inside the mapped workflows using the bundle's pain signals."""
         b = state["bundle"]
-        assert isinstance(b, IntakeBundle)
+        if not isinstance(b, IntakeBundle):
+            err = ExtractionError(
+                file_id="",
+                stage="bottleneck_detect",
+                message="bundle is None at node entry — upstream synthesis failed",
+            )
+            logger.error("graph.node.failed", node="bottleneck_detect", reason="missing_bundle")
+            emit("graph_node_failed", "bottleneck_detect skipped: missing bundle", "diagnose", "error",
+                 node="bottleneck_detect", reason="missing_bundle")
+            existing = list(state.get("errors") or [])
+            existing.append(err)
+            return {"bottlenecks": [], "errors": existing}
         started = time.perf_counter()
         logger.info(
             "graph.node.started",
@@ -401,7 +423,18 @@ def build_graph(
     def roi_score_node(state: DiagnosticState) -> dict:
         """Score each bottleneck as an automation Opportunity (pain, ROI, effort, risk)."""
         b = state["bundle"]
-        assert isinstance(b, IntakeBundle)
+        if not isinstance(b, IntakeBundle):
+            err = ExtractionError(
+                file_id="",
+                stage="roi_score",
+                message="bundle is None at node entry — upstream synthesis failed",
+            )
+            logger.error("graph.node.failed", node="roi_score", reason="missing_bundle")
+            emit("graph_node_failed", "roi_score skipped: missing bundle", "score", "error",
+                 node="roi_score", reason="missing_bundle")
+            existing = list(state.get("errors") or [])
+            existing.append(err)
+            return {"opportunities": [], "errors": existing}
         started = time.perf_counter()
         logger.info("graph.node.started", node="roi_score", bottleneck_count=len(state["bottlenecks"]))
         emit("graph_node_started", "Scoring automation opportunities", "score", node="roi_score")
@@ -486,7 +519,18 @@ def build_graph(
             existing.append(err)
             return {"blueprint": None, "errors": existing}
         b = state["bundle"]
-        assert isinstance(b, IntakeBundle)
+        if not isinstance(b, IntakeBundle):
+            err = ExtractionError(
+                file_id="",
+                stage="solution_blueprint",
+                message="bundle is None at node entry — upstream synthesis failed",
+            )
+            logger.error("graph.node.failed", node="solution_blueprint", reason="missing_bundle")
+            emit("graph_node_failed", "solution_blueprint skipped: missing bundle", "blueprint", "error",
+                 node="solution_blueprint", reason="missing_bundle")
+            existing = list(state.get("errors") or [])
+            existing.append(err)
+            return {"blueprint": None, "errors": existing}
         idx = state["opportunities"].index(sel)
         fr = state.get("final_review")
         detail = fr.detail if (fr and not _final_review_ok(fr)) else None
@@ -548,7 +592,30 @@ def build_graph(
             return {"final_review": None, "errors": existing}
         sel = state["selected"]
         b = state["bundle"]
-        assert sel is not None and isinstance(b, IntakeBundle)
+        if not isinstance(b, IntakeBundle):
+            err = ExtractionError(
+                file_id="",
+                stage="self_review_final",
+                message="bundle is None at node entry — upstream synthesis failed",
+            )
+            logger.error("graph.node.failed", node="self_review_final", reason="missing_bundle")
+            emit("graph_node_failed", "self_review_final skipped: missing bundle", "review_final", "error",
+                 node="self_review_final", reason="missing_bundle")
+            existing = list(state.get("errors") or [])
+            existing.append(err)
+            return {"final_review": None, "errors": existing}
+        if sel is None:
+            err = ExtractionError(
+                file_id="",
+                stage="self_review_final",
+                message="selected opportunity is None at node entry — upstream selection failed",
+            )
+            logger.error("graph.node.failed", node="self_review_final", reason="missing_selected")
+            emit("graph_node_failed", "self_review_final skipped: missing selected opportunity", "review_final", "error",
+                 node="self_review_final", reason="missing_selected")
+            existing = list(state.get("errors") or [])
+            existing.append(err)
+            return {"final_review": None, "errors": existing}
         started = time.perf_counter()
         logger.info(
             "graph.node.started",
