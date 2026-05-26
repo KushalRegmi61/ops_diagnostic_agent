@@ -10,7 +10,7 @@ import time
 from pydantic import BaseModel
 
 from app.agents.lead._logging import llm_meta_fields
-from app.llm.base import LLMProvider
+from app.llm.base import LLMParseError, LLMProvider
 from app.prompts.bottleneck_detect import PROMPT
 from app.schemas import Bottleneck, IntakeBundle, WorkflowRecord
 from app.structured_logging import get_logger
@@ -38,7 +38,12 @@ def run(*, provider: LLMProvider, bundle: IntakeBundle, workflows: list[Workflow
         bundle_json=json.dumps(bundle.model_dump(), indent=2),
     )
     result, meta = provider.generate_json(prompt_name="bottleneck_detect", prompt=prompt, schema=_Wrap)
-    bottlenecks = _Wrap.model_validate(result).bottlenecks if result else []
+    if not meta.parsed_json:
+        raise LLMParseError(
+            stage="bottleneck_detect",
+            message=f"provider returned parsed_json=False after {meta.retry_count} retries",
+        )
+    bottlenecks = _Wrap.model_validate(result).bottlenecks
     logger.info(
         "agent.lead.completed",
         agent="bottleneck_detect",

@@ -10,7 +10,7 @@ import json
 import time
 
 from app.agents.lead._logging import llm_meta_fields
-from app.llm.base import LLMProvider
+from app.llm.base import LLMParseError, LLMProvider
 from app.prompts.solution_blueprint import PROMPT
 from app.schemas import Blueprint, IntakeBundle, Opportunity
 from app.structured_logging import get_logger
@@ -45,12 +45,17 @@ def run(
     if revision_detail:
         prompt += f"\n\nRevision note: fix this self-review failure while preserving the Blueprint schema: {revision_detail}"
     result, meta = provider.generate_json(prompt_name="solution_blueprint", prompt=prompt, schema=Blueprint)
-    blueprint = Blueprint.model_validate(result) if result else None
+    if not meta.parsed_json:
+        raise LLMParseError(
+            stage="solution_blueprint",
+            message=f"provider returned parsed_json=False after {meta.retry_count} retries",
+        )
+    blueprint = Blueprint.model_validate(result)
     logger.info(
         "agent.lead.completed",
         agent="solution_blueprint",
-        has_blueprint=blueprint is not None,
-        step_count=len(blueprint.steps) if blueprint is not None else 0,
+        has_blueprint=True,
+        step_count=len(blueprint.steps),
         elapsed_ms=round((time.perf_counter() - started) * 1000),
         **llm_meta_fields(meta),
     )

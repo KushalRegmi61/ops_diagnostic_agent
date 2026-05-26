@@ -8,7 +8,7 @@ import json
 import time
 
 from app.agents.lead._logging import llm_meta_fields
-from app.llm.base import LLMProvider
+from app.llm.base import LLMParseError, LLMProvider
 from app.prompts.synthesis import PROMPT
 from app.schemas import FileSummary, IntakeBundle
 from app.structured_logging import get_logger
@@ -28,22 +28,11 @@ def run(*, provider: LLMProvider, file_summaries: dict[str, FileSummary]) -> Int
     result, meta = provider.generate_json(
         prompt_name="cross_file_synthesis", prompt=prompt, schema=IntakeBundle,
     )
-    if not result:
-        bundle = IntakeBundle(
-            workflows=[], pain_signals=[], lead_rows=[],
-            contradictions=[], file_index=[], extraction_errors=[],
+    if not meta.parsed_json:
+        raise LLMParseError(
+            stage="synthesis",
+            message=f"provider returned parsed_json=False after {meta.retry_count} retries",
         )
-        logger.warning(
-            "agent.lead.completed",
-            agent="synthesis",
-            fallback="empty_bundle",
-            workflow_count=0,
-            pain_signal_count=0,
-            lead_row_count=0,
-            elapsed_ms=round((time.perf_counter() - started) * 1000),
-            **llm_meta_fields(meta),
-        )
-        return bundle
     bundle = IntakeBundle.model_validate(result)
     logger.info(
         "agent.lead.completed",

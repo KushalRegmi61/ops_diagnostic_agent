@@ -10,7 +10,7 @@ import time
 from pydantic import BaseModel
 
 from app.agents.lead._logging import llm_meta_fields
-from app.llm.base import LLMProvider
+from app.llm.base import LLMParseError, LLMProvider
 from app.prompts.fastest_win_select import PROMPT
 from app.schemas import Opportunity
 from app.structured_logging import get_logger
@@ -33,22 +33,11 @@ def run(*, provider: LLMProvider, opportunities: list[Opportunity]) -> Opportuni
         return None
     prompt = PROMPT.format(opportunities_json=json.dumps([o.model_dump() for o in opportunities], indent=2))
     result, meta = provider.generate_json(prompt_name="fastest_win_select", prompt=prompt, schema=_Wrap)
-    if not result:
-        # Deterministic fallback.
-        opportunities_sorted = sorted(
-            opportunities,
-            key=lambda o: (o.roi_score - o.effort_score - o.risk_score, o.pain_score, -o.effort_score),
-            reverse=True,
+    if not meta.parsed_json:
+        raise LLMParseError(
+            stage="fastest_win_select",
+            message=f"provider returned parsed_json=False after {meta.retry_count} retries",
         )
-        logger.warning(
-            "agent.lead.completed",
-            agent="fastest_win_select",
-            selected=True,
-            fallback="deterministic_sort",
-            elapsed_ms=round((time.perf_counter() - started) * 1000),
-            **llm_meta_fields(meta),
-        )
-        return opportunities_sorted[0]
     idx = _Wrap.model_validate(result).selected_index
     if 0 <= idx < len(opportunities):
         logger.info(

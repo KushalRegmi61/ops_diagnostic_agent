@@ -10,7 +10,7 @@ import time
 from pydantic import BaseModel
 
 from app.agents.lead._logging import llm_meta_fields
-from app.llm.base import LLMProvider
+from app.llm.base import LLMParseError, LLMProvider
 from app.prompts.roi_score import PROMPT
 from app.schemas import Bottleneck, IntakeBundle, Opportunity
 from app.structured_logging import get_logger
@@ -33,7 +33,12 @@ def run(*, provider: LLMProvider, bundle: IntakeBundle, bottlenecks: list[Bottle
         bundle_json=json.dumps(bundle.model_dump(), indent=2),
     )
     result, meta = provider.generate_json(prompt_name="roi_score", prompt=prompt, schema=_Wrap)
-    opportunities = _Wrap.model_validate(result).opportunities if result else []
+    if not meta.parsed_json:
+        raise LLMParseError(
+            stage="roi_score",
+            message=f"provider returned parsed_json=False after {meta.retry_count} retries",
+        )
+    opportunities = _Wrap.model_validate(result).opportunities
     logger.info(
         "agent.lead.completed",
         agent="roi_score",

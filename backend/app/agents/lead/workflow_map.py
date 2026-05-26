@@ -10,7 +10,7 @@ import time
 from pydantic import BaseModel
 
 from app.agents.lead._logging import llm_meta_fields
-from app.llm.base import LLMProvider
+from app.llm.base import LLMParseError, LLMProvider
 from app.prompts.workflow_map import PROMPT
 from app.schemas import IntakeBundle, WorkflowRecord
 from app.structured_logging import get_logger
@@ -30,12 +30,16 @@ def run(*, provider: LLMProvider, bundle: IntakeBundle) -> list[WorkflowRecord]:
     logger.info("agent.lead.started", agent="workflow_map", bundle_workflow_count=len(bundle.workflows))
     prompt = PROMPT.format(bundle_json=json.dumps(bundle.model_dump(), indent=2))
     result, meta = provider.generate_json(prompt_name="workflow_map", prompt=prompt, schema=_Wrap)
-    workflows = _Wrap.model_validate(result).workflows if result else bundle.workflows
+    if not meta.parsed_json:
+        raise LLMParseError(
+            stage="workflow_map",
+            message=f"provider returned parsed_json=False after {meta.retry_count} retries",
+        )
+    workflows = _Wrap.model_validate(result).workflows
     logger.info(
         "agent.lead.completed",
         agent="workflow_map",
         workflow_count=len(workflows),
-        fallback="bundle_workflows" if not result else None,
         elapsed_ms=round((time.perf_counter() - started) * 1000),
         **llm_meta_fields(meta),
     )
