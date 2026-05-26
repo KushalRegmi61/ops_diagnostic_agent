@@ -5,6 +5,8 @@ agents, parsers, providers) consults through the cached `get_settings()`
 accessor. Tests that mutate environment variables mid-suite must call
 `get_settings.cache_clear()` to re-read.
 """
+
+from functools import lru_cache
 from typing import Annotated, Literal
 
 from pydantic import field_validator
@@ -14,7 +16,9 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 class Settings(BaseSettings):
     """Typed application settings loaded from environment / .env file."""
 
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", case_sensitive=False, extra="ignore"
+    )
 
     database_url: str
     blob_store_dir: str
@@ -23,7 +27,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
-    llm_provider: Literal["ollama", "openai", "groq", "openai_compatible"] = "ollama"
+    llm_provider: Literal["ollama", "openai", "groq", "openai_compatible"] = "openai"
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b"
@@ -71,6 +75,7 @@ class Settings(BaseSettings):
         return value
 
 
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Return a fresh Settings instance — call sites typically cache this themselves."""
+    """Return the cached process-wide Settings; call ``get_settings.cache_clear()`` after env mutations."""
     return Settings()

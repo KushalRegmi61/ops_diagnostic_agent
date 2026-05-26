@@ -181,7 +181,6 @@ def start_run(
     logger.info("run.status.updated", status=run.status)
     _emit(on_event, "run_status_updated", "Run is now active", "start", status=run.status)
 
-    get_provider.cache_clear()
     provider = get_provider()
     logger.info("run.provider.ready", provider=getattr(provider, "name", type(provider).__name__))
     _emit(

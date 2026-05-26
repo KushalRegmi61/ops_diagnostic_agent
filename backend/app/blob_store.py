@@ -1,19 +1,22 @@
 """On-disk blob store for uploaded files.
 
-Files land under `BLOB_DIR/<file_id>/<file_name>` keyed by the generated
-file_id. Used by `app.services.files.upload_file` on intake and by parsers
-when re-reading bytes for excerpt round-trips.
+Files land under ``<blob_store_dir>/<file_id>/<file_name>`` keyed by the
+generated file_id. Settings are read lazily so test isolation works without
+monkey-patching this module.
 """
 from pathlib import Path
 
 from app.config import get_settings
 
-BLOB_DIR = Path(get_settings().blob_store_dir)
+
+def _blob_dir() -> Path:
+    """Resolve the configured blob root at call time, not at import time."""
+    return Path(get_settings().blob_store_dir)
 
 
 def blob_path_for(file_id: str, file_name: str) -> Path:
     """Return the on-disk path where this file's bytes live (no I/O)."""
-    return BLOB_DIR / file_id / file_name
+    return _blob_dir() / file_id / file_name
 
 
 def save_blob(file_id: str, file_name: str, content: bytes) -> str:

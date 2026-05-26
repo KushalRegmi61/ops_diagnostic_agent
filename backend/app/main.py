@@ -52,11 +52,11 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Ops Diagnostic Agent", version="0.1.0", lifespan=lifespan)
-settings = get_settings()
 logger = get_logger(__name__)
+_settings_for_cors = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.frontend_cors_origins,
+    allow_origins=_settings_for_cors.frontend_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
