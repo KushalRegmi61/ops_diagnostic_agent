@@ -113,21 +113,15 @@ ops_diagnostic_agent/
 │   └── tests/{unit,integration}/    # 182+ unit, integration gates on real services
 ├── frontend/                        # Next.js 16 dashboard — upload, live progress, blueprint viewer
 ├── docs/
-│   ├── architecture.md              # Current architecture + recent hardening pass
-│   ├── demo_script.md               # 5-minute demo walkthrough
-│   ├── requirements.md              # Spec (FR + NFR)
-│   ├── project_glossary.md          # Domain + architecture terms
-│   ├── file_responsibility_map.md   # One line per backend module
-│   └── superpowers/{specs,plans}/   # Design + implementation docs for major changes
-├── samples/                         # Realistic ops files for the end-to-end demo
-└── audit.md                         # Post-hardening audit + resolved-in commit map
+└── └── architecture.md              # Current architecture + recent hardening pass
+
 ```
 
 ---
 
 ## Engineering posture
 
-This repo has been hardened against the structural flaws cataloged in [`audit.md`](audit.md). Notable invariants enforced at HEAD:
+
 
 - **Citation invariant.** Every `Source` round-trips through a real parser. `self_review_final` enforces existence + reachability deterministically; per-file `cite_locator` enforces it before any FileSummary finalizes.
 - **No silent drops.** `LLMParseError` is raised whenever a provider returns `parsed_json=False`; graph wrappers append a structured `ExtractionError` to `state.errors`. `DiagnosticState.errors` is annotated with `operator.add` so LangGraph accumulates errors automatically across nodes.
@@ -136,7 +130,7 @@ This repo has been hardened against the structural flaws cataloged in [`audit.md
 - **Upload safety.** `POST /api/files` rejects unknown MIME types (415), streams uploads in 1 MiB chunks against `max_upload_mb` (413), and sanitizes filenames against path traversal before any disk write.
 - **Real systems only.** No mock LLM provider exists in the codebase, by policy. Tests touch real Ollama, real Redis Stack, real SQLite. CI runs against local Ollama with `temperature=0` for deterministic invariants.
 
-See [`audit.md`](audit.md) for the full inventory + the commit map that resolved each item.
+
 
 ---
 
@@ -145,13 +139,3 @@ See [`audit.md`](audit.md) for the full inventory + the commit map that resolved
 **Not deployed.** The project runs locally via `make dev` (backend) and `npm run dev` (frontend) against a local Ollama daemon and a local Redis Stack tarball. The architecture is container-friendly — services have clean boundaries, all configuration is environment-driven via `pydantic-settings`, and side effects are isolated to the services layer — but container artifacts are not yet committed.
 
 ---
-
-## Documentation
-
-- [`docs/architecture.md`](docs/architecture.md) — current architecture, including the structural hardening pass and the LangChain provider migration
-- [`docs/demo_script.md`](docs/demo_script.md) — five-minute demo walkthrough
-- [`docs/requirements.md`](docs/requirements.md) — functional + non-functional requirements
-- [`docs/project_glossary.md`](docs/project_glossary.md) — domain + architecture vocabulary
-- [`docs/file_responsibility_map.md`](docs/file_responsibility_map.md) — one-line description per backend module
-- [`CLAUDE.md`](CLAUDE.md) — engineering standards used to build this project (TDD, real-systems-only, no Claude-trailer commits)
-- [`audit.md`](audit.md) — post-merge hardening audit + resolved-in commit map
