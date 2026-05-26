@@ -706,10 +706,10 @@ export function DiagnosticWorkspace() {
               </label>
 
               {selectedFiles.length > 0 ? (
-                <ul className="mt-3 grid gap-1.5">
+                <ul className="mt-3 grid w-full gap-1.5">
                   {selectedFiles.map((file) => (
                     <li
-                      className="flex items-center gap-2.5 rounded-md border border-[var(--border)] bg-[var(--bg-soft)]/40 px-2.5 py-2"
+                      className="flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg-soft)]/40 py-1.5 pl-2.5 pr-1.5"
                       key={`${file.name}-${file.lastModified}`}
                     >
                       <FileText
@@ -719,12 +719,12 @@ export function DiagnosticWorkspace() {
                       <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--fg-strong)]">
                         {file.name}
                       </span>
-                      <span className="shrink-0 font-mono text-[10.5px] text-[var(--fg-dim)]">
+                      <span className="shrink-0 whitespace-nowrap font-mono text-[10.5px] text-[var(--fg-dim)]">
                         {formatBytes(file.size)}
                       </span>
                       <button
                         aria-label={`Remove ${file.name}`}
-                        className="rounded p-0.5 text-[var(--fg-dim)] hover:bg-rose-50 hover:text-rose-600"
+                        className="ml-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--fg-dim)] transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-40"
                         disabled={isWorking}
                         onClick={() => removeFile(file)}
                         type="button"
@@ -1058,10 +1058,10 @@ export function DiagnosticWorkspace() {
                   Parsed file metadata appears here once uploads complete.
                 </p>
               ) : (
-                <ul className="mt-4 grid gap-2 max-h-[280px] overflow-y-auto pr-1">
+                <ul className="mt-4 grid max-h-[280px] gap-2 overflow-y-auto pr-1">
                   {uploadedFiles.map((file) => (
                     <li
-                      className="flex items-start gap-2.5 rounded-md border border-[var(--border)] bg-white p-2.5"
+                      className="flex w-full min-w-0 items-start gap-2.5 overflow-hidden rounded-md border border-[var(--border)] bg-white p-2.5"
                       key={file.file_id}
                     >
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-teal-50 text-teal-700">
