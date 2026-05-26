@@ -69,6 +69,7 @@ def test_get_blueprint_returns_payload():
 
     s = _session()
     s.add(Run(id="r_3", status="complete"))
+    s.flush()
     s.add(BlueprintRecord(run_id="r_3", payload_json=json.dumps(bp.model_dump())))
     s.commit(); s.close()
 

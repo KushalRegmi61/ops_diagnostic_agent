@@ -7,7 +7,7 @@ from current Settings on first access so tests can reconfigure the DSN.
 from functools import lru_cache
 from typing import Iterator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -24,10 +24,18 @@ class Base(DeclarativeBase):
 def _build_engine() -> Engine:
     """Construct the SQLAlchemy engine from current Settings (cached per process)."""
     settings = get_settings()
-    return create_engine(
+    eng = create_engine(
         settings.database_url,
         connect_args={"check_same_thread": False} if settings.database_url.startswith("sqlite") else {},
     )
+    if settings.database_url.startswith("sqlite"):
+        @event.listens_for(eng, "connect")
+        def _sqlite_fk_pragma(dbapi_conn, _conn_record):
+            """Enable FK enforcement for every new SQLite connection."""
+            cur = dbapi_conn.cursor()
+            cur.execute("PRAGMA foreign_keys=ON")
+            cur.close()
+    return eng
 
 
 # Module-level handles built on first access. Tests that reconfigure the DSN
