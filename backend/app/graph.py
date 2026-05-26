@@ -10,11 +10,13 @@ Wiring:
                 → (bounded revision) solution_blueprint | END
 """
 import time
+from pathlib import Path
 from typing import Callable
 
 from langgraph.graph import END, StateGraph
 
 from app import _langgraph_pydantic_patch  # noqa: F401  (teach Redis serializer about Pydantic)
+from app.parsers import parse as parsers_parse
 from app.agents.lead import (
     bottleneck_detect,
     fastest_win_select,
@@ -91,8 +93,31 @@ def build_graph(
                     continue
                 parsed = parsed_files.get(file_ref.file_id)
                 if parsed is None:
-                    logger.warning("graph.per_file.skipped", file_id=file_ref.file_id, reason="not_parsed")
-                    continue
+                    # Resumability: on worker restart the closure is empty. Re-parse
+                    # from the FileRef's blob_path so the run picks up where it left
+                    # off instead of silently skipping. See audit.md C1.
+                    try:
+                        parsed = parsers_parse(
+                            file_id=file_ref.file_id,
+                            file_name=file_ref.file_name,
+                            path=Path(file_ref.blob_path),
+                            mime_type=file_ref.mime_type,
+                        )
+                        parsed_files[file_ref.file_id] = parsed  # cache for redo passes
+                        logger.info(
+                            "graph.per_file.rehydrated",
+                            file_id=file_ref.file_id,
+                            file_type=parsed.type,
+                            segment_count=len(parsed.segments),
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "graph.per_file.skipped",
+                            file_id=file_ref.file_id,
+                            reason="rehydrate_failed",
+                            error=str(exc),
+                        )
+                        continue
                 agent = get_agent_module(parsed.type)
                 if agent is None:
                     logger.warning(
