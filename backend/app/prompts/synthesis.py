@@ -21,7 +21,7 @@ Output schema:
 - lead_rows: list[LeadRow]. Carry forward structured lead/contact/opportunity records.
 - contradictions: list[Contradiction]. Use when files disagree on the same fact.
 - contradictions[].topic: string. Short fact under dispute.
-- contradictions[].statements: list[dict]. Include claim text and available sources for each side.
+- contradictions[].statements: list[{{claim: str, sources: list[Source]}}]. One entry per conflicting side.
 - file_index: list[Source]. Deduped Source objects observed anywhere in the summaries.
 - extraction_errors: list[ExtractionError]. Empty unless an input summary is missing or unusable.
 
