@@ -111,9 +111,7 @@ ops_diagnostic_agent/
 │   │   ├── llm/                     # LangChainJSONProvider base + ollama/openai/groq/openai_compat
 │   │   └── services/                # files.upload_file, runs.start_run, runs.get_blueprint
 │   └── tests/{unit,integration}/    # 182+ unit, integration gates on real services
-├── frontend/                        # Next.js 16 dashboard — upload, live progress, blueprint viewer
-├── docs/
-└── └── architecture.md              # Current architecture + recent hardening pass
+└── frontend/                        # Next.js 16 dashboard — upload, live progress, blueprint viewer
 
 ```
 
