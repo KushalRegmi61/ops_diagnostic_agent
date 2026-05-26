@@ -60,7 +60,8 @@ def _upload(client: TestClient, name: str, mime: str) -> str:
 
 def test_full_pipeline_emits_cited_blueprint(tmp_path, monkeypatch):
     """Three uploads -> /api/runs -> /blueprint round-trips a citation through /excerpt."""
-    monkeypatch.setattr("app.blob_store.BLOB_DIR", tmp_path)
+    monkeypatch.setenv("BLOB_STORE_DIR", str(tmp_path))
+    get_settings.cache_clear()
     client = TestClient(app)
 
     fid_md = _upload(client, "notes.md", "text/markdown")

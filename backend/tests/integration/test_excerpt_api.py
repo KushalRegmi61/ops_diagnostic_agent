@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.config import get_settings
 from app.database import Base, engine
 from app.main import app
 
@@ -19,7 +20,8 @@ def setup_module():
 
 def test_excerpt_returns_text_for_uploaded_file(tmp_path, monkeypatch):
     """Uploading a file then POSTing /excerpt returns the parser-resolved text."""
-    monkeypatch.setattr("app.blob_store.BLOB_DIR", tmp_path)
+    monkeypatch.setenv("BLOB_STORE_DIR", str(tmp_path))
+    get_settings.cache_clear()
     client = TestClient(app)
 
     fixture = Path(__file__).parent.parent / "fixtures" / "notes.md"
@@ -40,7 +42,8 @@ def test_excerpt_returns_text_for_uploaded_file(tmp_path, monkeypatch):
 
 def test_excerpt_returns_404_for_unknown_file(tmp_path, monkeypatch):
     """/excerpt for an unknown file_id returns 404."""
-    monkeypatch.setattr("app.blob_store.BLOB_DIR", tmp_path)
+    monkeypatch.setenv("BLOB_STORE_DIR", str(tmp_path))
+    get_settings.cache_clear()
     client = TestClient(app)
     r = client.post(
         "/api/files/f_nope/excerpt",
