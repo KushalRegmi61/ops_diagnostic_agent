@@ -110,24 +110,44 @@ def upload_file(db: Session, *, file_name: str, mime_type: str, content: bytes) 
 
 
 def get_parsed(db: Session, file_id: str) -> ParsedFile:
-    """Return a cached ParsedFile; re-parse on cache miss or blob-mtime change."""
+    """Return a cached ParsedFile; re-parse on cache miss or blob-mtime change.
+
+    Raises ValueError if the FileRecord row is missing OR its blob file is absent
+    on disk. Both conditions map to a 404 at the HTTP layer.
+    """
     rec = db.get(FileRecord, file_id)
     if rec is None:
         logger.warning("file.reparse.missing", file_id=file_id)
         raise ValueError(f"File {file_id} not found")
-    mtime_ns = Path(rec.blob_path).stat().st_mtime_ns
+    try:
+        mtime_ns = Path(rec.blob_path).stat().st_mtime_ns
+    except FileNotFoundError as exc:
+        logger.warning(
+            "file.reparse.blob_missing",
+            file_id=file_id,
+            blob_path=rec.blob_path,
+        )
+        raise ValueError(f"File {file_id} blob missing on disk") from exc
     key = (file_id, mtime_ns)
     cached = _cache_get(key)
     if cached is not None:
         logger.info("file.reparse.cache_hit", file_id=file_id)
         return cached
     logger.info("file.reparse.started", file_id=file_id, file_name=rec.file_name, mime_type=rec.mime_type)
-    parsed = parse_file(
-        file_id=rec.id,
-        file_name=rec.file_name,
-        path=Path(rec.blob_path),
-        mime_type=rec.mime_type,
-    )
+    try:
+        parsed = parse_file(
+            file_id=rec.id,
+            file_name=rec.file_name,
+            path=Path(rec.blob_path),
+            mime_type=rec.mime_type,
+        )
+    except FileNotFoundError as exc:
+        logger.warning(
+            "file.reparse.blob_missing",
+            file_id=file_id,
+            blob_path=rec.blob_path,
+        )
+        raise ValueError(f"File {file_id} blob missing on disk") from exc
     _cache_put(key, parsed)
     logger.info(
         "file.reparse.completed",

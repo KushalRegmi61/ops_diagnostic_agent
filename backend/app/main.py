@@ -174,6 +174,7 @@ def _run_event_emitter(run_id: str):
 
 
 _run_semaphore: asyncio.Semaphore | None = None
+_pending_run_tasks: set[asyncio.Task] = set()
 
 
 def _get_run_semaphore() -> asyncio.Semaphore:
@@ -182,6 +183,35 @@ def _get_run_semaphore() -> asyncio.Semaphore:
     if _run_semaphore is None:
         _run_semaphore = asyncio.Semaphore(get_settings().max_concurrent_runs)
     return _run_semaphore
+
+
+def _run_task_done(task: asyncio.Task) -> None:
+    """Discard the dispatch task from the pending set; mark run='error' on uncaught exception.
+
+    _start_run_sync catches all exceptions raised inside start_run and writes
+    run.status='error' itself. This callback is the safety net for exceptions
+    that escape _start_run_dispatch's own body (semaphore acquire,
+    asyncio.to_thread machinery, threadpool exhaustion) where _start_run_sync
+    is never reached.
+    """
+    _pending_run_tasks.discard(task)
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is None:
+        return
+    run_id = task.get_name().removeprefix("run-dispatch-")
+    logger.error("run.dispatch.failed", run_id=run_id, error=str(exc), exc_info=exc)
+    db = SessionLocal()
+    try:
+        run = db.get(Run, run_id)
+        if run is not None and run.status not in {"complete", "no_blueprint", "error"}:
+            run.status = "error"
+            db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
 
 
 def _start_run_sync(run_id: str) -> None:
@@ -249,7 +279,12 @@ async def post_run(
         stage="queued",
         data={"file_count": len(body.file_ids), "file_ids": body.file_ids},
     )
-    asyncio.create_task(_start_run_dispatch(run_id))
+    task = asyncio.create_task(
+        _start_run_dispatch(run_id),
+        name=f"run-dispatch-{run_id}",
+    )
+    _pending_run_tasks.add(task)
+    task.add_done_callback(_run_task_done)
     logger.info("http.run_create.queued", run_id=run_id, status=run.status)
     return RunResponse(run_id=run_id, status=run.status, langfuse_trace_id=run.langfuse_trace_id)
 
