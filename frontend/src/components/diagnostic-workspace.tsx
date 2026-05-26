@@ -192,7 +192,11 @@ function timelineFor(
     {
       label: "Cross-file synthesis",
       hint: "Bottlenecks · ROI · fastest win",
-      state: hasBlueprint ? "done" : run && status === "running" ? "active" : "waiting",
+      state: hasBlueprint
+        ? "done"
+        : run && status === "running"
+          ? "active"
+          : "waiting",
     },
     {
       label: "Cited blueprint",
@@ -632,7 +636,10 @@ export function DiagnosticWorkspace() {
       <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-6 px-6 py-8 xl:px-10">
         {message ? (
           <div className="fade-up flex items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-            <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+            <AlertCircle
+              aria-hidden="true"
+              className="mt-0.5 h-4 w-4 shrink-0"
+            />
             <p className="flex-1">{message}</p>
             <button
               aria-label="Dismiss"
@@ -737,7 +744,10 @@ export function DiagnosticWorkspace() {
                   type="button"
                 >
                   {isWorking ? (
-                    <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                    <Loader2
+                      aria-hidden="true"
+                      className="h-4 w-4 animate-spin"
+                    />
                   ) : (
                     <Play aria-hidden="true" className="h-4 w-4" />
                   )}
@@ -769,7 +779,10 @@ export function DiagnosticWorkspace() {
                 </div>
                 {isWorking ? (
                   <span className="chip border-indigo-300 text-indigo-700">
-                    <Loader2 aria-hidden="true" className="h-3 w-3 animate-spin" />
+                    <Loader2
+                      aria-hidden="true"
+                      className="h-3 w-3 animate-spin"
+                    />
                     {Math.floor(elapsed / 60)}:
                     {String(elapsed % 60).padStart(2, "0")}
                   </span>
@@ -792,9 +805,15 @@ export function DiagnosticWorkspace() {
                       }`}
                     >
                       {step.state === "done" ? (
-                        <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" />
+                        <CheckCircle2
+                          aria-hidden="true"
+                          className="h-3.5 w-3.5"
+                        />
                       ) : step.state === "active" ? (
-                        <Loader2 aria-hidden="true" className="h-3 w-3 animate-spin" />
+                        <Loader2
+                          aria-hidden="true"
+                          className="h-3 w-3 animate-spin"
+                        />
                       ) : (
                         idx + 1
                       )}
@@ -832,7 +851,9 @@ export function DiagnosticWorkspace() {
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-[var(--fg-dim)]">status</span>
-                    <span className="text-[var(--fg-strong)]">{run.status}</span>
+                    <span className="text-[var(--fg-strong)]">
+                      {run.status}
+                    </span>
                   </div>
                   {run.langfuse_trace_id ? (
                     <div className="flex items-center justify-between">
@@ -857,7 +878,10 @@ export function DiagnosticWorkspace() {
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="flex items-center gap-3">
                         <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-teal-400 shadow-[0_10px_24px_-10px_rgba(79,70,229,0.55)]">
-                          <Zap aria-hidden="true" className="h-5 w-5 text-white" />
+                          <Zap
+                            aria-hidden="true"
+                            className="h-5 w-5 text-white"
+                          />
                         </span>
                         <div>
                           <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--fg-dim)]">
@@ -890,7 +914,10 @@ export function DiagnosticWorkspace() {
                       {blueprint.summary.sources.length > 0 ? (
                         <div className="mt-3 flex flex-wrap gap-2">
                           {blueprint.summary.sources.map((source, idx) => (
-                            <CitationChip key={`summary-${idx}`} source={source} />
+                            <CitationChip
+                              key={`summary-${idx}`}
+                              source={source}
+                            />
                           ))}
                         </div>
                       ) : null}
@@ -902,25 +929,39 @@ export function DiagnosticWorkspace() {
                     <ClaimList
                       accent="indigo"
                       claims={blueprint.steps}
-                      icon={<ArrowRight aria-hidden="true" className="h-3.5 w-3.5" />}
+                      icon={
+                        <ArrowRight
+                          aria-hidden="true"
+                          className="h-3.5 w-3.5"
+                        />
+                      }
                       title="Implementation steps"
                     />
                     <ClaimList
                       accent="teal"
                       claims={blueprint.required_systems}
-                      icon={<Settings2 aria-hidden="true" className="h-3.5 w-3.5" />}
+                      icon={
+                        <Settings2 aria-hidden="true" className="h-3.5 w-3.5" />
+                      }
                       title="Required systems"
                     />
                     <ClaimList
                       accent="amber"
                       claims={blueprint.success_metrics}
-                      icon={<Gauge aria-hidden="true" className="h-3.5 w-3.5" />}
+                      icon={
+                        <Gauge aria-hidden="true" className="h-3.5 w-3.5" />
+                      }
                       title="Success metrics"
                     />
                     <ClaimList
                       accent="rose"
                       claims={blueprint.risks}
-                      icon={<AlertTriangle aria-hidden="true" className="h-3.5 w-3.5" />}
+                      icon={
+                        <AlertTriangle
+                          aria-hidden="true"
+                          className="h-3.5 w-3.5"
+                        />
+                      }
                       title="Risks"
                     />
                   </div>
@@ -951,30 +992,39 @@ export function DiagnosticWorkspace() {
                         : "Your cited blueprint will land here"}
                     </h3>
                     <p className="text-[14px] leading-7 text-[var(--fg-muted)]">
-                      Upload operational evidence — meeting transcripts, ops docs,
-                      CSV extracts, MBOX threads — and the agent produces a step-by-step
-                      automation plan where every claim round-trips to its source.
+                      Upload operational evidence: meeting transcripts, ops
+                      docs, CSV extracts, MBOX threads, and the agent produces a
+                      step-by-step automation plan where every claim round-trips
+                      to its source.
                     </p>
                   </div>
 
                   <div className="grid w-full max-w-sm gap-3 text-left">
                     <HeroStep
-                      icon={<Upload aria-hidden="true" className="h-3.5 w-3.5" />}
+                      icon={
+                        <Upload aria-hidden="true" className="h-3.5 w-3.5" />
+                      }
                       label="Drop multi-format evidence"
                       n={1}
                     />
                     <HeroStep
-                      icon={<Workflow aria-hidden="true" className="h-3.5 w-3.5" />}
+                      icon={
+                        <Workflow aria-hidden="true" className="h-3.5 w-3.5" />
+                      }
                       label="Per-file ReAct agents in parallel"
                       n={2}
                     />
                     <HeroStep
-                      icon={<Sparkles aria-hidden="true" className="h-3.5 w-3.5" />}
+                      icon={
+                        <Sparkles aria-hidden="true" className="h-3.5 w-3.5" />
+                      }
                       label="Cross-file synthesis & ROI scoring"
                       n={3}
                     />
                     <HeroStep
-                      icon={<Quote aria-hidden="true" className="h-3.5 w-3.5" />}
+                      icon={
+                        <Quote aria-hidden="true" className="h-3.5 w-3.5" />
+                      }
                       label="Cited blueprint — every claim sourced"
                       n={4}
                     />
@@ -998,7 +1048,8 @@ export function DiagnosticWorkspace() {
                   </h2>
                 </div>
                 <span className="chip">
-                  {uploadedFiles.length} file{uploadedFiles.length === 1 ? "" : "s"}
+                  {uploadedFiles.length} file
+                  {uploadedFiles.length === 1 ? "" : "s"}
                 </span>
               </div>
 
@@ -1096,7 +1147,8 @@ export function DiagnosticWorkspace() {
 
         <footer className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] pt-5 text-[11px] text-[var(--fg-dim)]">
           <span>
-            Built with FastAPI · LangGraph · Redis Stack · Ollama / OpenAI / Groq
+            Built with FastAPI · LangGraph · Redis Stack · Ollama / OpenAI /
+            Groq
           </span>
           <span className="font-mono">v0.2 · {new Date().getFullYear()}</span>
         </footer>
