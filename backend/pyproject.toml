@@ -16,7 +16,6 @@ dependencies = [
   "openpyxl>=3.1",
   "webvtt-py>=0.5",
   "srt>=3.5",
-  "openai>=1.40",
   "langchain-core>=1.4.0",
   "langchain-community>=0.4.0",
   "langgraph>=0.2.50",
@@ -25,6 +24,9 @@ dependencies = [
   "redis>=5.0",
   "langfuse>=2.50",
   "structlog>=24.4",
+  "langchain>=1.0.0",
+  "langchain-openai>=1.0.0",
+  "langchain-ollama>=1.0.0",
 ]
 
 [project.optional-dependencies]

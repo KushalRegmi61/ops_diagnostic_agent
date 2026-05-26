@@ -1,94 +1,40 @@
-"""Local Ollama provider — the default for development.
+"""Local Ollama provider backed by LangChain's ChatOllama integration."""
+from langchain_ollama import ChatOllama
 
-Talks to ``/api/chat`` with ``format=json`` and one parse-and-validate retry on
-malformed output. Default timeout is 300s because cold loads of llama3.2:3b can
-take 30-120s after a daemon restart or model swap.
-"""
-import json
-import time
-from typing import Type
-
-import httpx
-from pydantic import BaseModel, ValidationError
-
-from app.llm.base import GenerateMetadata
+from app.llm.langchain_base import LangChainJSONProvider
 
 
-class OllamaProvider:
+class OllamaProvider(LangChainJSONProvider):
     """LLMProvider implementation backed by a local Ollama server."""
 
     name = "ollama"
+    structured_method = "json_mode"
+    strict_schema = None
 
     def __init__(self, *, base_url: str, model: str, timeout_s: float = 300.0) -> None:
-        """Store base URL, model tag, and HTTP timeout (300s default for cold model loads)."""
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout_s = timeout_s
 
-    def generate_json(
+    def chat_model(
         self,
         *,
-        prompt_name: str,
-        prompt: str,
-        schema: Type[BaseModel],
         temperature: float = 0.0,
         max_tokens: int | None = None,
         top_p: float | None = None,
         seed: int | None = None,
-    ) -> tuple[dict, GenerateMetadata]:
-        """Call Ollama in JSON mode, retry once on parse/validation failure, return (parsed, meta)."""
-        options: dict = {"temperature": temperature}
-        if max_tokens is not None:
-            options["num_predict"] = max_tokens
-        if top_p is not None:
-            options["top_p"] = top_p
-        if seed is not None:
-            options["seed"] = seed
-
-        body = {
+    ) -> ChatOllama:
+        kwargs: dict = {
             "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream": False,
+            "base_url": self.base_url,
+            "temperature": temperature,
             "format": "json",
-            "options": options,
+            "client_kwargs": {"timeout": self.timeout_s},
         }
-        retry_count = 0
-        start = time.perf_counter()
-
-        for _ in range(2):
-            with httpx.Client(timeout=self.timeout_s) as client:
-                r = client.post(f"{self.base_url}/api/chat", json=body)
-                r.raise_for_status()
-                payload = r.json()
-                content = payload.get("message", {}).get("content", "")
-
-            try:
-                parsed = json.loads(content)
-                schema.model_validate(parsed)
-                latency_ms = int((time.perf_counter() - start) * 1000)
-                return parsed, GenerateMetadata(
-                    provider=self.name,
-                    model=self.model,
-                    prompt_name=prompt_name,
-                    token_estimate=len(prompt) // 4 + len(content) // 4,
-                    parsed_json=True,
-                    retry_count=retry_count,
-                    latency_ms=latency_ms,
-                )
-            except (json.JSONDecodeError, ValidationError) as e:
-                retry_count += 1
-                body["messages"].append({
-                    "role": "user",
-                    "content": f"Your previous response failed to parse as the required JSON: {e}. Reply with ONLY valid JSON matching the schema.",
-                })
-
-        latency_ms = int((time.perf_counter() - start) * 1000)
-        return {}, GenerateMetadata(
-            provider=self.name,
-            model=self.model,
-            prompt_name=prompt_name,
-            token_estimate=len(prompt) // 4,
-            parsed_json=False,
-            retry_count=retry_count,
-            latency_ms=latency_ms,
-        )
+        if max_tokens is not None:
+            kwargs["num_predict"] = max_tokens
+        if top_p is not None:
+            kwargs["top_p"] = top_p
+        if seed is not None:
+            kwargs["seed"] = seed
+        return ChatOllama(**kwargs)

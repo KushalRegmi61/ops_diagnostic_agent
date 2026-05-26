@@ -15,10 +15,18 @@ _SUFFIX = (
 )
 
 
-def run(*, provider: LLMProvider, parsed: ParsedFile, on_tool_call=None) -> FileSummary:
+def run(
+    *,
+    provider: LLMProvider,
+    parsed: ParsedFile,
+    on_tool_call=None,
+    run_id: str | None = None,
+    trace_name: str | None = None,
+) -> FileSummary:
     """Drive the ReAct loop for a parsed DOCX; returns the produced FileSummary."""
     cap = get_settings().per_file_iteration_cap
     return run_react_loop(
         provider=provider, parsed=parsed,
         prompt_suffix=_SUFFIX, iteration_cap=cap, on_tool_call=on_tool_call,
+        run_id=run_id, trace_name=trace_name,
     )

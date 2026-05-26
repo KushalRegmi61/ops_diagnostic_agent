@@ -98,8 +98,29 @@ def _read_segment_args(parsed: ParsedFile, args: dict) -> dict:
     return args
 
 
-def build_tools(parsed: ParsedFile, ws: WorkingState) -> dict[ToolName, StructuredTool]:
+def _cite_locator_with_source(parsed: ParsedFile, locator: dict) -> dict:
+    """Return validation result plus the reusable Source-shaped citation."""
+    result = cite_locator(parsed, locator=locator)
+    if result.get("valid") is True:
+        result["source"] = {
+            "file_id": parsed.file_id,
+            "file_name": parsed.file_name,
+            "type": parsed.type,
+            "locator": locator,
+        }
+    return result
+
+
+def build_tools(parsed: ParsedFile, ws: WorkingState, *, agent_mode: bool = False) -> dict[ToolName, StructuredTool]:
     """Build LangChain StructuredTool instances bound to this file and working state."""
+    def _finalize(one_paragraph_summary, open_questions=None):
+        summary = finalize_summary(
+            ws,
+            one_paragraph_summary=one_paragraph_summary,
+            open_questions=open_questions,
+        )
+        return summary.model_dump(mode="json") if agent_mode else summary
+
     return {
         "search_text": StructuredTool.from_function(
             name="search_text",
@@ -145,19 +166,16 @@ def build_tools(parsed: ParsedFile, ws: WorkingState) -> dict[ToolName, Structur
         ),
         "cite_locator": StructuredTool.from_function(
             name="cite_locator",
-            description="Validate that a locator can be resolved back to source text.",
+            description="Validate that a locator can be resolved and return a reusable source object.",
             args_schema=CiteLocatorArgs,
-            func=lambda locator: cite_locator(parsed, locator=locator),
+            func=lambda locator: _cite_locator_with_source(parsed, locator),
         ),
         "finalize_summary": StructuredTool.from_function(
             name="finalize_summary",
             description="Finalize the per-file working state into a FileSummary and end the loop.",
             args_schema=FinalizeSummaryArgs,
-            func=lambda one_paragraph_summary, open_questions=None: finalize_summary(
-                ws,
-                one_paragraph_summary=one_paragraph_summary,
-                open_questions=open_questions,
-            ),
+            func=_finalize,
+            return_direct=True,
         ),
     }
 

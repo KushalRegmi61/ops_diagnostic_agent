@@ -3,7 +3,10 @@
 Verifies node names, entry point, conditional routing keys, and helper logic
 without invoking the LLM. End-to-end behavior is covered by integration tests.
 """
+import inspect
+
 from app.graph import _final_review_ok, build_graph, initial_state
+import app.graph as graph_module
 from app.schemas import FinalReview
 
 
@@ -60,3 +63,11 @@ def test_graph_compiles_and_exposes_all_nodes():
         "revise_inc",
     }
     assert expected.issubset(nodes)
+
+
+def test_parent_graph_passes_run_context_to_per_file_agents():
+    """per_file_fanout threads run and trace context into nested agents."""
+    source = inspect.getsource(graph_module.build_graph)
+
+    assert 'run_id=state["run_id"]' in source
+    assert 'trace_name=f"per_file:{file_ref.file_id}"' in source
