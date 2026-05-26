@@ -653,9 +653,9 @@ export function DiagnosticWorkspace() {
         ) : null}
 
         {/* 3-column layout: left rail | center blueprint | right rail */}
-        <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)_360px]">
+        <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_320px]">
           {/* LEFT RAIL */}
-          <aside className="flex flex-col gap-5 xl:sticky xl:top-[88px] xl:self-start">
+          <aside className="flex flex-col gap-5 lg:sticky lg:top-[88px] lg:self-start">
             {/* Intake */}
             <div className="card p-5">
               <div className="flex items-center justify-between">
@@ -967,7 +967,7 @@ export function DiagnosticWorkspace() {
                   </div>
                 </div>
               ) : (
-                <div className="flex min-h-[600px] flex-col items-center justify-center gap-6 p-10 text-center">
+                <div className="flex min-h-[420px] flex-col items-center justify-center gap-6 p-8 text-center">
                   <div className="relative">
                     <div className="absolute inset-0 -z-10 rounded-full bg-gradient-to-br from-indigo-200/60 to-teal-200/60 blur-2xl" />
                     <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-[var(--border)] bg-white">
@@ -1034,8 +1034,8 @@ export function DiagnosticWorkspace() {
             </div>
           </section>
 
-          {/* RIGHT RAIL */}
-          <aside className="flex flex-col gap-5 xl:sticky xl:top-[88px] xl:self-start">
+          {/* RIGHT RAIL — joins center column on lg, becomes a sidebar on xl. */}
+          <aside className="grid gap-5 lg:grid-cols-2 lg:col-span-2 xl:col-span-1 xl:grid-cols-1 xl:sticky xl:top-[88px] xl:self-start">
             {/* Parsed evidence */}
             <div className="card p-5">
               <div className="flex items-center justify-between">
