@@ -68,7 +68,8 @@ def test_extract_lead_row_only_accepts_table_types():
     """extract_lead_row appends a LeadRow with raw + normalized payload."""
     ws = WorkingState(file_id="f1", file_name="leads.csv")
     extract_lead_row(ws, raw={"name": "Acme"}, normalized={"name": "Acme"}, source=_src())
-    assert ws.lead_rows[0].raw["name"] == "Acme"
+    assert ws.lead_rows[0].raw[0].key == "name"
+    assert ws.lead_rows[0].raw[0].value == "Acme"
 
 
 def test_cite_locator_roundtrips_through_parser():

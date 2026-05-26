@@ -32,14 +32,14 @@ def test_pdf_locator_validates():
 
 
 def test_source_attaches_locator():
-    """Source carries an opaque locator dict that survives round-trip."""
+    """Source carries a typed locator coerced from a dict via the discriminator."""
     src = Source(
         file_id="f1",
         file_name="sop.pdf",
         type="pdf",
         locator={"type": "pdf", "page": 2, "span_start": 10, "span_end": 40},
     )
-    assert src.locator["page"] == 2
+    assert src.locator.page == 2
 
 
 def test_transcript_locator_requires_timestamps():

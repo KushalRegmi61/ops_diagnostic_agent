@@ -8,9 +8,9 @@ citation invariant — every Source must round-trip through
 `app.parsers.excerpt(parsed, locator)` to non-empty text — is enforced
 against these schemas.
 """
-from typing import Annotated, Literal, Union
+from typing import Literal, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class PdfLocator(BaseModel):
@@ -79,12 +79,9 @@ class JsonLocator(BaseModel):
     pointer: str  # RFC 6901
 
 
-AnyLocator = Annotated[
-    Union[
-        PdfLocator, DocxLocator, TextLocator, TranscriptLocator,
-        TableLocator, XlsxLocator, MboxLocator, JsonLocator,
-    ],
-    Field(discriminator="type"),
+AnyLocator = Union[
+    PdfLocator, DocxLocator, TextLocator, TranscriptLocator,
+    TableLocator, XlsxLocator, MboxLocator, JsonLocator,
 ]
 
 
@@ -96,12 +93,12 @@ FileType = Literal[
 
 
 class Source(BaseModel):
-    """A citation: file identity plus an opaque locator dict matching one of the locator types."""
+    """A citation: file identity plus a typed discriminated-union locator."""
 
     file_id: str
     file_name: str
     type: FileType
-    locator: dict
+    locator: AnyLocator
 
 
 class ParsedSegment(BaseModel):
@@ -165,11 +162,18 @@ class PainSignal(BaseModel):
     sources: list[Source]
 
 
+class KVPair(BaseModel):
+    """A single key/value pair — used in place of free-form dicts so OpenAI strict schemas validate."""
+
+    key: str
+    value: str
+
+
 class LeadRow(BaseModel):
     """A normalized lead row (e.g. from a CSV) with its raw form and source citation."""
 
-    raw: dict
-    normalized: dict
+    raw: list[KVPair]
+    normalized: list[KVPair]
     source: Source
 
 

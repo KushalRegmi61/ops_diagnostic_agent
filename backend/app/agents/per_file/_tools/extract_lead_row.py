@@ -21,7 +21,14 @@ problem such as no owner, stale follow-up, or missing email, the agent should
 also call ``extract_pain_signal`` with the same source.
 """
 from app.agents.per_file._state import WorkingState
-from app.schemas import LeadRow, Source
+from app.schemas import KVPair, LeadRow, Source
+
+
+def _to_kv_pairs(d: dict | list) -> list[KVPair]:
+    """Coerce a free-form dict (or pre-built KV list) into ``list[KVPair]`` with stringified values."""
+    if isinstance(d, list):
+        return [item if isinstance(item, KVPair) else KVPair(**item) for item in d]
+    return [KVPair(key=str(k), value="" if v is None else str(v)) for k, v in d.items()]
 
 
 def extract_lead_row(ws: WorkingState, *, raw: dict, normalized: dict, source: Source) -> dict:
@@ -36,6 +43,6 @@ def extract_lead_row(ws: WorkingState, *, raw: dict, normalized: dict, source: S
 
     Returns a small acknowledgement containing the inserted row index.
     """
-    lr = LeadRow(raw=raw, normalized=normalized, source=source)
+    lr = LeadRow(raw=_to_kv_pairs(raw), normalized=_to_kv_pairs(normalized), source=source)
     ws.lead_rows.append(lr)
     return {"ok": True, "lead_row_index": len(ws.lead_rows) - 1}

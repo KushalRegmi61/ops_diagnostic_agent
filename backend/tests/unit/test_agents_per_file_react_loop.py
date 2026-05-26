@@ -12,7 +12,7 @@ from app.agents.per_file._react_loop import (
 )
 from app.agents.per_file._state import WorkingState
 from app.llm.base import LLMParseError
-from app.schemas import LeadRow, ParsedFile, ParsedSegment, PainSignal, Source, WorkflowRecord
+from app.schemas import KVPair, LeadRow, ParsedFile, ParsedSegment, PainSignal, Source, WorkflowRecord
 
 
 def _parsed() -> ParsedFile:
@@ -71,7 +71,11 @@ def test_state_recap_includes_recent_finding_snippets():
         PainSignal(text="Leads wait more than 24 hours before response.", category="delay", sources=[_source()])
     )
     ws.lead_rows.append(
-        LeadRow(raw={"name": "Acme Corp"}, normalized={"company": "Acme Corp"}, source=_source())
+        LeadRow(
+            raw=[KVPair(key="name", value="Acme Corp")],
+            normalized=[KVPair(key="company", value="Acme Corp")],
+            source=_source(),
+        )
     )
 
     recap = _state_recap(ws)

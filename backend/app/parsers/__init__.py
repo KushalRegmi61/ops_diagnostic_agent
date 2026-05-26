@@ -48,10 +48,11 @@ def parse(file_id: str, file_name: str, path: Path, mime_type: str) -> ParsedFil
     return mod.parse(file_id=file_id, file_name=file_name, path=path)
 
 
-def excerpt(parsed: ParsedFile, locator: dict) -> str:
-    """Dispatch to the ``excerpt()`` of the parser module matching ``parsed.type`` and return the locator's text."""
+def excerpt(parsed: ParsedFile, locator) -> str:
+    """Dispatch to the ``excerpt()`` of the parser module matching ``parsed.type``; accepts a dict or a locator model."""
     module_name = _EXCERPT_ROUTES.get(parsed.type)
     if module_name is None:
         raise ValueError(f"No excerpt module for parsed.type={parsed.type}")
     mod = __import__(f"app.parsers.{module_name}", fromlist=["excerpt"])
-    return mod.excerpt(parsed, locator)
+    loc_dict = locator.model_dump() if hasattr(locator, "model_dump") else locator
+    return mod.excerpt(parsed, loc_dict)

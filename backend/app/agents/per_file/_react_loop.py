@@ -72,7 +72,10 @@ def _state_recap(ws: WorkingState) -> str:
         signals = ", ".join(_clip(ps.text, 55) for ps in ws.pain_signals[-3:])
         parts.append(f"recent_pain_signals=[{signals}]")
     if ws.lead_rows:
-        rows = ", ".join(_compact_json(lr.normalized, 70) for lr in ws.lead_rows[-3:])
+        rows = ", ".join(
+            _compact_json({kv.key: kv.value for kv in lr.normalized}, 70)
+            for lr in ws.lead_rows[-3:]
+        )
         parts.append(f"recent_lead_rows=[{rows}]")
     return " | ".join(parts)
 
