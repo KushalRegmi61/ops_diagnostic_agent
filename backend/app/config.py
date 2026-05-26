@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     # Upload safety
     max_upload_mb: int = 50
 
+    # Excerpt cache
+    excerpt_cache_size: int = 32
+
     @field_validator("frontend_cors_origins", mode="before")
     @classmethod
     def _parse_frontend_cors_origins(cls, value: object) -> object:
