@@ -14,14 +14,33 @@ def _blob_dir() -> Path:
     return Path(get_settings().blob_store_dir)
 
 
+def _sanitize_filename(file_name: str) -> str:
+    """Reject filenames with directory components, NUL bytes, or non-printable chars.
+
+    Raises ValueError on anything suspicious so the caller fails loudly at the
+    HTTP boundary instead of writing outside the blob root.
+    """
+    if not file_name or file_name in {".", ".."}:
+        raise ValueError(f"unsafe filename: {file_name!r}")
+    if "\x00" in file_name:
+        raise ValueError("unsafe filename: NUL byte present")
+    if "/" in file_name or "\\" in file_name:
+        raise ValueError(f"unsafe filename: directory separator in {file_name!r}")
+    bare = Path(file_name).name
+    if bare != file_name:
+        raise ValueError(f"unsafe filename: {file_name!r}")
+    return bare
+
+
 def blob_path_for(file_id: str, file_name: str) -> Path:
     """Return the on-disk path where this file's bytes live (no I/O)."""
     return _blob_dir() / file_id / file_name
 
 
 def save_blob(file_id: str, file_name: str, content: bytes) -> str:
-    """Write bytes to the blob store, creating parent dirs; returns the path as a string."""
-    path = blob_path_for(file_id, file_name)
+    """Write bytes to the blob store; raises ValueError if ``file_name`` is unsafe."""
+    safe_name = _sanitize_filename(file_name)
+    path = blob_path_for(file_id, safe_name)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
     return str(path)
