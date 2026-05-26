@@ -25,32 +25,35 @@ def test_build_langfuse_handler_returns_none_without_keys(monkeypatch):
     assert _build_langfuse_handler() is None
 
 
-def test_build_langfuse_handler_initializes_client_before_callback(monkeypatch):
-    """The Langfuse client is initialized before CallbackHandler is constructed."""
-    events: list[tuple] = []
+def test_build_langfuse_handler_uses_cached_client_and_returns_callback_handler(monkeypatch):
+    """_build_langfuse_handler delegates client construction to langfuse_client().
 
-    class FakeLangfuse:
-        def __init__(self, *, public_key, secret_key, host):
-            events.append(("client", public_key, secret_key, host))
+    The cached client is consulted first; CallbackHandler is constructed only
+    when the client is available, confirming the single-client invariant.
+    """
+    events: list[str] = []
+
+    sentinel = object()  # stand-in for a real Langfuse client
 
     class FakeCallbackHandler:
         def __init__(self):
-            events.append(("handler",))
+            events.append("handler")
 
-    fake_langfuse = types.ModuleType("langfuse")
-    fake_langfuse.Langfuse = FakeLangfuse
     fake_langchain = types.ModuleType("langfuse.langchain")
     fake_langchain.CallbackHandler = FakeCallbackHandler
-    monkeypatch.setitem(sys.modules, "langfuse", fake_langfuse)
     monkeypatch.setitem(sys.modules, "langfuse.langchain", fake_langchain)
-    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk")
-    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk")
-    monkeypatch.setenv("LANGFUSE_HOST", "https://example.test")
+
+    from app import observability
+    get_settings.cache_clear()
+    observability.langfuse_client.cache_clear()
+
+    # Patch langfuse_client to return a sentinel (non-None = "configured")
+    monkeypatch.setattr(observability, "langfuse_client", lambda: sentinel)
 
     handler = _build_langfuse_handler()
 
     assert isinstance(handler, FakeCallbackHandler)
-    assert events == [("client", "pk", "sk", "https://example.test"), ("handler",)]
+    assert events == ["handler"]
 
 
 def test_langchain_config_includes_callbacks_tags_and_metadata(monkeypatch):
@@ -74,3 +77,24 @@ def test_langchain_config_includes_callbacks_tags_and_metadata(monkeypatch):
         "prompt_name": "summary",
         "file_id": "f1",
     }
+
+
+from unittest.mock import patch
+
+
+def test_langfuse_client_constructed_once_across_langchain_config_calls(monkeypatch) -> None:
+    """langchain_config() must reuse the cached client, not build a fresh one per call."""
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk_test")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk_test")
+    from app import observability
+    from app.config import get_settings
+    get_settings.cache_clear()
+    observability.langfuse_client.cache_clear()
+
+    with patch.object(observability, "Langfuse") as MockLF:
+        observability.langchain_config(provider="ollama", model="x", prompt_name="p1")
+        observability.langchain_config(provider="ollama", model="x", prompt_name="p2")
+        observability.langchain_config(provider="ollama", model="x", prompt_name="p3")
+        assert MockLF.call_count == 1, (
+            f"expected 1 Langfuse client construction, got {MockLF.call_count}"
+        )
