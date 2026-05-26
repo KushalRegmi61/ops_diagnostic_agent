@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: Literal["console", "json"] = "console"
 
+    # Upload safety
+    max_upload_mb: int = 50
+
     @field_validator("frontend_cors_origins", mode="before")
     @classmethod
     def _parse_frontend_cors_origins(cls, value: object) -> object:

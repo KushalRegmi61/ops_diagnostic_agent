@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app import models  # noqa: F401  (register tables with Base.metadata)
 from app.config import get_settings
 from app.database import Base, SessionLocal, engine, get_db
+from app.parsers import _MIME_ROUTES  # type: ignore[attr-defined]  # registry source of truth
 from app.parsers import csv as _p_csv
 from app.parsers import docx as _p_docx
 from app.parsers import json as _p_json
@@ -100,18 +101,46 @@ def post_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> FileRef:
-    """Upload a single file: persists bytes to blob store, parses, and inserts a FileRecord row."""
+    """Upload a single file. Rejects unsupported mimes (415) and oversize bodies (413)."""
     clear_context()
+    settings_now = get_settings()
+    mime_type = file.content_type or "application/octet-stream"
+    if mime_type not in _MIME_ROUTES:
+        logger.warning("http.file_upload.rejected", reason="unsupported_mime", mime_type=mime_type)
+        raise HTTPException(status_code=415, detail=f"unsupported mime_type={mime_type}")
+
+    max_bytes = settings_now.max_upload_mb * 1024 * 1024
+    chunks: list[bytes] = []
+    total = 0
+    chunk_size = 1024 * 1024
+    while True:
+        chunk = file.file.read(chunk_size)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            logger.warning(
+                "http.file_upload.rejected",
+                reason="too_large",
+                limit_mb=settings_now.max_upload_mb,
+            )
+            raise HTTPException(
+                status_code=413,
+                detail=f"file too large (limit {settings_now.max_upload_mb} MB)",
+            )
+        chunks.append(chunk)
+    content = b"".join(chunks)
+
     logger.info(
         "http.file_upload.started",
         file_name=file.filename or "unknown",
-        mime_type=file.content_type or "application/octet-stream",
+        mime_type=mime_type,
+        byte_count=len(content),
     )
-    content = file.file.read()
     ref = upload_file(
         db,
         file_name=file.filename or "unknown",
-        mime_type=file.content_type or "application/octet-stream",
+        mime_type=mime_type,
         content=content,
     )
     db.commit()
