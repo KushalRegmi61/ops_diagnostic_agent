@@ -206,11 +206,18 @@ class SummaryReview(BaseModel):
 
 # ---- Synthesis types ----
 
+class ContradictionStatement(BaseModel):
+    """One side of a contradiction: a claim plus the sources that back it."""
+
+    claim: str
+    sources: list[Source]
+
+
 class Contradiction(BaseModel):
     """A cross-file contradiction: topic plus the conflicting statements."""
 
     topic: str
-    statements: list[dict]
+    statements: list[ContradictionStatement]
 
 
 class IntakeBundle(BaseModel):
