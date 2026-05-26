@@ -25,37 +25,15 @@ from app.agents.lead import (
     synthesis,
     workflow_map,
 )
-from app.agents.per_file import (
-    docx as a_docx,
-    json as a_json,
-    markdown as a_markdown,
-    mbox as a_mbox,
-    pdf as a_pdf,
-    table as a_table,
-    transcript as a_transcript,
-)
 from app.llm.base import LLMProvider
 from app.observability import node_span
+from app.registry import get_agent_module
 from app.schemas import IntakeBundle, ParsedFile
 from app.state import DiagnosticState
 from app.structured_logging import get_logger
 
 
 logger = get_logger(__name__)
-
-# FileType -> per-file agent module.
-_PER_FILE_AGENTS = {
-    "pdf": a_pdf,
-    "docx": a_docx,
-    "md": a_markdown,
-    "txt": a_markdown,
-    "transcript_vtt": a_transcript,
-    "transcript_srt": a_transcript,
-    "csv": a_table,
-    "xlsx": a_table,
-    "mbox": a_mbox,
-    "json": a_json,
-}
 
 
 def build_graph(
@@ -115,7 +93,7 @@ def build_graph(
                 if parsed is None:
                     logger.warning("graph.per_file.skipped", file_id=file_ref.file_id, reason="not_parsed")
                     continue
-                agent = _PER_FILE_AGENTS.get(parsed.type)
+                agent = get_agent_module(parsed.type)
                 if agent is None:
                     logger.warning(
                         "graph.per_file.skipped",
@@ -142,7 +120,13 @@ def build_graph(
                     segment_count=len(parsed.segments),
                 )
                 with node_span(f"per_file:{file_ref.file_id}", input={"type": parsed.type}):
-                    summary = agent.run(provider=provider, parsed=parsed, on_tool_call=on_tool_call)
+                    summary = agent.run(
+                        provider=provider,
+                        parsed=parsed,
+                        on_tool_call=on_tool_call,
+                        run_id=state["run_id"],
+                        trace_name=f"per_file:{file_ref.file_id}",
+                    )
                 out[file_ref.file_id] = summary
                 elapsed_ms = round((time.perf_counter() - file_started) * 1000)
                 logger.info(

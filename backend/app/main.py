@@ -17,16 +17,7 @@ from app import models  # noqa: F401  (register tables with Base.metadata)
 from app.config import get_settings
 from app.database import Base, SessionLocal, engine, get_db
 from app.parsers import _MIME_ROUTES  # type: ignore[attr-defined]  # registry source of truth
-from app.parsers import csv as _p_csv
-from app.parsers import docx as _p_docx
-from app.parsers import json as _p_json
-from app.parsers import mbox as _p_mbox
-from app.parsers import md as _p_md
-from app.parsers import pdf as _p_pdf
-from app.parsers import srt as _p_srt
-from app.parsers import txt as _p_txt
-from app.parsers import vtt as _p_vtt
-from app.parsers import xlsx as _p_xlsx
+from app.parsers import excerpt as parsers_excerpt
 from app.models import Run
 from app.run_events import run_event_hub
 from app.schemas import Blueprint, FileRef
@@ -62,20 +53,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-_EXCERPT_MODULES = {
-    "pdf": _p_pdf,
-    "docx": _p_docx,
-    "md": _p_md,
-    "txt": _p_txt,
-    "transcript_vtt": _p_vtt,
-    "transcript_srt": _p_srt,
-    "csv": _p_csv,
-    "xlsx": _p_xlsx,
-    "mbox": _p_mbox,
-    "json": _p_json,
-}
 
 
 class ExcerptRequest(BaseModel):
@@ -159,12 +136,8 @@ def post_excerpt(
         parsed = get_parsed(db, file_id)
     except ValueError:
         raise HTTPException(status_code=404, detail=f"file {file_id} not found")
-
-    module = _EXCERPT_MODULES.get(parsed.type)
-    if module is None:
-        raise HTTPException(status_code=400, detail=f"no excerpt module for type {parsed.type}")
     try:
-        text = module.excerpt(parsed, body.locator)
+        text = parsers_excerpt(parsed, body.locator)
     except (KeyError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     return ExcerptResponse(text=text)
