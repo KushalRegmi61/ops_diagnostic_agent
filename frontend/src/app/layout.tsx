@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ops Diagnostic Agent",
-  description: "Upload operational evidence and generate cited automation blueprints.",
+  title: "Ops Diagnostic Agent — Evidence to Blueprint",
+  description:
+    "Upload operational evidence and generate cited automation blueprints with a multi-agent diagnostic engine.",
 };
 
 export default function RootLayout({
@@ -27,7 +28,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="relative min-h-full flex flex-col">{children}</body>
     </html>
   );
 }
