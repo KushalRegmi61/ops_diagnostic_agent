@@ -217,8 +217,7 @@ def build_graph(
         )
         result: dict = {"file_summaries": out}
         if new_errors:
-            existing = list(state.get("errors") or [])
-            result["errors"] = existing + new_errors
+            result["errors"] = new_errors
         return result
 
     def review_node(state: DiagnosticState) -> dict:
@@ -233,9 +232,7 @@ def build_graph(
                 logger.error("graph.node.failed", node="review_summaries", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Review summaries failed: parsed_json=False", "review", "error",
                      node="review_summaries", stage=err.stage)
-                existing = list(state.get("errors") or [])
-                existing.append(ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message))
-                return {"summary_review": SummaryReview(revision_requests=[], notes="(review_summaries LLM parse failed)"), "errors": existing}
+                return {"summary_review": SummaryReview(revision_requests=[], notes="(review_summaries LLM parse failed)"), "errors": [ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message)]}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "graph.node.completed",
@@ -297,13 +294,11 @@ def build_graph(
                 logger.error("graph.node.failed", node="synthesis", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Synthesis failed: parsed_json=False", "synthesis", "error",
                      node="synthesis", stage=err.stage)
-                existing = list(state.get("errors") or [])
-                existing.append(ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message))
                 empty = IntakeBundle(
                     workflows=[], pain_signals=[], lead_rows=[],
                     contradictions=[], file_index=[], extraction_errors=[],
                 )
-                return {"bundle": empty, "errors": existing}
+                return {"bundle": empty, "errors": [ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message)]}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "graph.node.completed",
@@ -337,9 +332,7 @@ def build_graph(
             logger.error("graph.node.failed", node="workflow_map", reason="missing_bundle")
             emit("graph_node_failed", "workflow_map skipped: missing bundle", "diagnose", "error",
                  node="workflow_map", reason="missing_bundle")
-            existing = list(state.get("errors") or [])
-            existing.append(err)
-            return {"workflows": [], "errors": existing}
+            return {"workflows": [], "errors": [err]}
         started = time.perf_counter()
         logger.info("graph.node.started", node="workflow_map", bundle_workflow_count=len(b.workflows))
         emit("graph_node_started", "Mapping workflows", "diagnose", node="workflow_map")
@@ -350,9 +343,7 @@ def build_graph(
                 logger.error("graph.node.failed", node="workflow_map", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Workflow map failed: parsed_json=False", "diagnose", "error",
                      node="workflow_map", stage=err.stage)
-                existing = list(state.get("errors") or [])
-                existing.append(ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message))
-                return {"workflows": [], "errors": existing}
+                return {"workflows": [], "errors": [ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message)]}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "graph.node.completed",
@@ -382,9 +373,7 @@ def build_graph(
             logger.error("graph.node.failed", node="bottleneck_detect", reason="missing_bundle")
             emit("graph_node_failed", "bottleneck_detect skipped: missing bundle", "diagnose", "error",
                  node="bottleneck_detect", reason="missing_bundle")
-            existing = list(state.get("errors") or [])
-            existing.append(err)
-            return {"bottlenecks": [], "errors": existing}
+            return {"bottlenecks": [], "errors": [err]}
         started = time.perf_counter()
         logger.info(
             "graph.node.started",
@@ -400,9 +389,7 @@ def build_graph(
                 logger.error("graph.node.failed", node="bottleneck_detect", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Bottleneck detection failed: parsed_json=False", "diagnose", "error",
                      node="bottleneck_detect", stage=err.stage)
-                existing = list(state.get("errors") or [])
-                existing.append(ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message))
-                return {"bottlenecks": [], "errors": existing}
+                return {"bottlenecks": [], "errors": [ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message)]}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "graph.node.completed",
@@ -432,9 +419,7 @@ def build_graph(
             logger.error("graph.node.failed", node="roi_score", reason="missing_bundle")
             emit("graph_node_failed", "roi_score skipped: missing bundle", "score", "error",
                  node="roi_score", reason="missing_bundle")
-            existing = list(state.get("errors") or [])
-            existing.append(err)
-            return {"opportunities": [], "errors": existing}
+            return {"opportunities": [], "errors": [err]}
         started = time.perf_counter()
         logger.info("graph.node.started", node="roi_score", bottleneck_count=len(state["bottlenecks"]))
         emit("graph_node_started", "Scoring automation opportunities", "score", node="roi_score")
@@ -445,9 +430,7 @@ def build_graph(
                 logger.error("graph.node.failed", node="roi_score", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "ROI scoring failed: parsed_json=False", "score", "error",
                      node="roi_score", stage=err.stage)
-                existing = list(state.get("errors") or [])
-                existing.append(ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message))
-                return {"opportunities": [], "errors": existing}
+                return {"opportunities": [], "errors": [ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message)]}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "graph.node.completed",
@@ -477,9 +460,7 @@ def build_graph(
                 logger.error("graph.node.failed", node="fastest_win_select", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Fastest win selection failed: parsed_json=False", "select", "error",
                      node="fastest_win_select", stage=err.stage)
-                existing = list(state.get("errors") or [])
-                existing.append(ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message))
-                return {"selected": None, "errors": existing}
+                return {"selected": None, "errors": [ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message)]}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "graph.node.completed",
@@ -515,9 +496,7 @@ def build_graph(
                 node="solution_blueprint",
                 reason="no_selected_opportunity",
             )
-            existing = list(state.get("errors") or [])
-            existing.append(err)
-            return {"blueprint": None, "errors": existing}
+            return {"blueprint": None, "errors": [err]}
         b = state["bundle"]
         if not isinstance(b, IntakeBundle):
             err = ExtractionError(
@@ -528,9 +507,7 @@ def build_graph(
             logger.error("graph.node.failed", node="solution_blueprint", reason="missing_bundle")
             emit("graph_node_failed", "solution_blueprint skipped: missing bundle", "blueprint", "error",
                  node="solution_blueprint", reason="missing_bundle")
-            existing = list(state.get("errors") or [])
-            existing.append(err)
-            return {"blueprint": None, "errors": existing}
+            return {"blueprint": None, "errors": [err]}
         idx = state["opportunities"].index(sel)
         fr = state.get("final_review")
         detail = fr.detail if (fr and not _final_review_ok(fr)) else None
@@ -547,9 +524,7 @@ def build_graph(
                 logger.error("graph.node.failed", node="solution_blueprint", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Solution blueprint failed: parsed_json=False", "blueprint", "error",
                      node="solution_blueprint", stage=err.stage)
-                existing = list(state.get("errors") or [])
-                existing.append(ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message))
-                return {"blueprint": None, "errors": existing}
+                return {"blueprint": None, "errors": [ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message)]}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "graph.node.completed",
@@ -587,9 +562,7 @@ def build_graph(
                 node="self_review_final",
                 reason="no_blueprint",
             )
-            existing = list(state.get("errors") or [])
-            existing.append(err)
-            return {"final_review": None, "errors": existing}
+            return {"final_review": None, "errors": [err]}
         sel = state["selected"]
         b = state["bundle"]
         if not isinstance(b, IntakeBundle):
@@ -601,9 +574,7 @@ def build_graph(
             logger.error("graph.node.failed", node="self_review_final", reason="missing_bundle")
             emit("graph_node_failed", "self_review_final skipped: missing bundle", "review_final", "error",
                  node="self_review_final", reason="missing_bundle")
-            existing = list(state.get("errors") or [])
-            existing.append(err)
-            return {"final_review": None, "errors": existing}
+            return {"final_review": None, "errors": [err]}
         if sel is None:
             err = ExtractionError(
                 file_id="",
@@ -613,9 +584,7 @@ def build_graph(
             logger.error("graph.node.failed", node="self_review_final", reason="missing_selected")
             emit("graph_node_failed", "self_review_final skipped: missing selected opportunity", "review_final", "error",
                  node="self_review_final", reason="missing_selected")
-            existing = list(state.get("errors") or [])
-            existing.append(err)
-            return {"final_review": None, "errors": existing}
+            return {"final_review": None, "errors": [err]}
         started = time.perf_counter()
         logger.info(
             "graph.node.started",
@@ -636,9 +605,7 @@ def build_graph(
                 logger.error("graph.node.failed", node="self_review_final", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Self-review failed: parsed_json=False", "review_final", "error",
                      node="self_review_final", stage=err.stage)
-                existing = list(state.get("errors") or [])
-                existing.append(ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message))
-                return {"final_review": None, "errors": existing}
+                return {"final_review": None, "errors": [ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message)]}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
             "graph.node.completed",
