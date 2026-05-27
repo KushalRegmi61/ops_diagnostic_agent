@@ -1,0 +1,5 @@
+Billing reconciliation runs nightly.
+Failed invoice retries are not surfaced to finance.
+CSRs manually correct 12 invoices per day on average.
+The billing lead reports a $3k/month leakage.
+Engineering proposed a webhook-based retry queue.

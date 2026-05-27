@@ -1,0 +1,5 @@
+Customer onboarding has chronic delays.
+New hires wait 5 business days for a CRM seat.
+Manual ticket submission requires three approvals.
+The onboarding manager reports a 30% drop in week-1 activation.
+Producers ask for a self-serve provisioning flow.
