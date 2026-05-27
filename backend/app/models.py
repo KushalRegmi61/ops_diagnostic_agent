@@ -9,7 +9,7 @@ run_id or file_id.
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.engine import Dialect
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -54,6 +54,7 @@ class Run(Base):
     status: Mapped[str] = mapped_column(String, default="created")
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_utc_now)
     langfuse_trace_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    run_context_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
 
     files: Mapped[list["FileRecord"]] = relationship(back_populates="run")
 
