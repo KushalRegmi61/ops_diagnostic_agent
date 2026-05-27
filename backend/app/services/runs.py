@@ -39,14 +39,27 @@ class FileNotFoundForRunError(Exception):
     pass
 
 
-def create_run(db: Session, *, file_ids: list[str]) -> str:
+def create_run(db: Session, *, file_ids: list[str], user_context: str | None = None) -> str:
     """Create a new run and link the given uploaded files to it.
+
+    ``user_context`` is normalized: blank/whitespace becomes None, populated values
+    are persisted as the JSON dump of a RunContext model.
 
     Raises FileNotFoundForRunError if any file_id is missing in the DB.
     """
+    from app.schemas import RunContext  # local import to avoid widening top-level imports
+
     run_id = f"r_{uuid.uuid4().hex[:12]}"
-    logger.info("run.create.started", run_id=run_id, file_count=len(file_ids), file_ids=file_ids)
-    db.add(Run(id=run_id, status="created"))
+    logger.info(
+        "run.create.started",
+        run_id=run_id,
+        file_count=len(file_ids),
+        file_ids=file_ids,
+        user_context_chars=len(user_context) if user_context else 0,
+    )
+    ctx = RunContext(user_context=user_context) if user_context else None
+    ctx_json = ctx.model_dump_json() if ctx and ctx.has_steering() else None
+    db.add(Run(id=run_id, status="created", run_context_json=ctx_json))
 
     for fid in file_ids:
         rec = db.get(FileRecord, fid)
@@ -55,7 +68,7 @@ def create_run(db: Session, *, file_ids: list[str]) -> str:
             raise FileNotFoundForRunError(f"file {fid} not in DB")
         rec.run_id = run_id
     db.flush()
-    logger.info("run.create.completed", run_id=run_id)
+    logger.info("run.create.completed", run_id=run_id, has_steering=ctx_json is not None)
     return run_id
 
 

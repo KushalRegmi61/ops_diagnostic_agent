@@ -10,7 +10,7 @@ import asyncio
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import models  # noqa: F401  (register tables with Base.metadata)
@@ -147,6 +147,7 @@ class CreateRunRequest(BaseModel):
     """Request body for creating a diagnostic run from previously uploaded files."""
 
     file_ids: list[str]
+    user_context: str | None = Field(default=None, max_length=2000)
 
 
 class RunResponse(BaseModel):
@@ -263,7 +264,7 @@ async def post_run(
     if not body.file_ids:
         raise HTTPException(status_code=400, detail="file_ids must be non-empty")
     try:
-        run_id = create_run(db, file_ids=body.file_ids)
+        run_id = create_run(db, file_ids=body.file_ids, user_context=body.user_context)
     except FileNotFoundForRunError as e:
         logger.warning("http.run_create.file_missing", error=str(e))
         raise HTTPException(status_code=404, detail=str(e))
