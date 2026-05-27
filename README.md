@@ -221,10 +221,8 @@ Every external boundary is environment-driven via `pydantic-settings`. Switching
 
 ## Author
 
-**Kushal Regmi** — Applied AI Engineer focused on production agents, full-stack AI systems, retrieval infrastructure, and the messy parts of making AI useful in real businesses.
+Kushal Regmi
 
 - GitHub: https://github.com/KushalRegmi61
 - LinkedIn: https://www.linkedin.com/in/kushal-regmi-0b88a42aa
 - Email: kushalregmi432@gmail.com
-
-If you're hiring for production AI engineering and this codebase looks like the kind of work you need done, I'd love to talk.
