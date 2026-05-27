@@ -9,22 +9,27 @@ import time
 
 from app.agents.lead._logging import llm_meta_fields
 from app.llm.base import LLMParseError, LLMProvider
-from app.prompts.synthesis import PROMPT
-from app.schemas import FileSummary, IntakeBundle
+from app.prompts import synthesis as synthesis_prompt
+from app.schemas import FileSummary, IntakeBundle, RunContext
 from app.structured_logging import get_logger
 
 
 logger = get_logger(__name__)
 
 
-def run(*, provider: LLMProvider, file_summaries: dict[str, FileSummary]) -> IntakeBundle:
+def run(
+    *,
+    provider: LLMProvider,
+    file_summaries: dict[str, FileSummary],
+    run_context: RunContext | None = None,
+) -> IntakeBundle:
     """Cross-file synthesis via one LLM call; returns an empty bundle on parse failure."""
     started = time.perf_counter()
     logger.info("agent.lead.started", agent="synthesis", file_summary_count=len(file_summaries))
     summaries_json = json.dumps(
         {fid: fs.model_dump() for fid, fs in file_summaries.items()}, indent=2,
     )
-    prompt = PROMPT.format(summaries_json=summaries_json)
+    prompt = synthesis_prompt.render(run_context=run_context, summaries_json=summaries_json)
     result, meta = provider.generate_json(
         prompt_name="cross_file_synthesis", prompt=prompt, schema=IntakeBundle,
     )

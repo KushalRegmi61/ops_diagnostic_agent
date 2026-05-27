@@ -11,8 +11,8 @@ from pydantic import BaseModel
 
 from app.agents.lead._logging import llm_meta_fields
 from app.llm.base import LLMParseError, LLMProvider
-from app.prompts.bottleneck_detect import PROMPT
-from app.schemas import Bottleneck, IntakeBundle, WorkflowRecord
+from app.prompts import bottleneck_detect as bd_prompt
+from app.schemas import Bottleneck, IntakeBundle, RunContext, WorkflowRecord
 from app.structured_logging import get_logger
 
 
@@ -24,7 +24,13 @@ class _Wrap(BaseModel):
     bottlenecks: list[Bottleneck]
 
 
-def run(*, provider: LLMProvider, bundle: IntakeBundle, workflows: list[WorkflowRecord]) -> list[Bottleneck]:
+def run(
+    *,
+    provider: LLMProvider,
+    bundle: IntakeBundle,
+    workflows: list[WorkflowRecord],
+    run_context: RunContext | None = None,
+) -> list[Bottleneck]:
     """Detect bottlenecks via one LLM call; returns an empty list on parse failure."""
     started = time.perf_counter()
     logger.info(
@@ -33,7 +39,8 @@ def run(*, provider: LLMProvider, bundle: IntakeBundle, workflows: list[Workflow
         workflow_count=len(workflows),
         pain_signal_count=len(bundle.pain_signals),
     )
-    prompt = PROMPT.format(
+    prompt = bd_prompt.render(
+        run_context=run_context,
         workflows_json=json.dumps([w.model_dump() for w in workflows], indent=2),
         bundle_json=json.dumps(bundle.model_dump(), indent=2),
     )

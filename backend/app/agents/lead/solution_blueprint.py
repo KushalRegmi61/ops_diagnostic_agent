@@ -11,8 +11,8 @@ import time
 
 from app.agents.lead._logging import llm_meta_fields
 from app.llm.base import LLMParseError, LLMProvider
-from app.prompts.solution_blueprint import PROMPT
-from app.schemas import Blueprint, IntakeBundle, Opportunity
+from app.prompts import solution_blueprint as sb_prompt
+from app.schemas import Blueprint, IntakeBundle, Opportunity, RunContext
 from app.structured_logging import get_logger
 
 
@@ -26,6 +26,7 @@ def run(
     selected: Opportunity,
     selected_index: int,
     revision_detail: str | None = None,
+    run_context: RunContext | None = None,
 ) -> Blueprint | None:
     """Generate the Blueprint via one LLM call; appends a fix-it preamble when revising."""
     started = time.perf_counter()
@@ -37,7 +38,8 @@ def run(
         workflow_count=len(bundle.workflows),
         pain_signal_count=len(bundle.pain_signals),
     )
-    prompt = PROMPT.format(
+    prompt = sb_prompt.render(
+        run_context=run_context,
         selected_index=selected_index,
         selected_json=json.dumps(selected.model_dump(), indent=2),
         bundle_json=json.dumps(bundle.model_dump(), indent=2),

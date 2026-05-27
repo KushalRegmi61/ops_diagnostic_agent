@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from app.agents.lead._logging import llm_meta_fields
 from app.llm.base import LLMParseError, LLMProvider
 from app.parsers import excerpt as parser_excerpt
-from app.prompts.self_review_final import PROMPT
+from app.prompts import self_review_final as srf_prompt
 from app.schemas import (
     Blueprint,
     FileSummary,
@@ -22,6 +22,7 @@ from app.schemas import (
     IntakeBundle,
     Opportunity,
     ParsedFile,
+    RunContext,
     Source,
 )
 from app.structured_logging import get_logger
@@ -80,6 +81,7 @@ def run(
     file_summaries: dict[str, FileSummary],
     parsed_files: dict[str, ParsedFile],
     revised_once: bool,
+    run_context: RunContext | None = None,
 ) -> FinalReview:
     """Run deterministic citation checks and an LLM judgment; merged detail drives the revise_inc branch."""
     started = time.perf_counter()
@@ -106,7 +108,8 @@ def run(
 
     open_questions = sorted({q for fs in file_summaries.values() for q in fs.open_questions})
 
-    prompt = PROMPT.format(
+    prompt = srf_prompt.render(
+        run_context=run_context,
         blueprint_json=json.dumps(blueprint.model_dump(), indent=2),
         selected_json=json.dumps(selected.model_dump(), indent=2),
         opportunities_json=json.dumps([o.model_dump() for o in opportunities], indent=2),

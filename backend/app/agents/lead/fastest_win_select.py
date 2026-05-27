@@ -11,8 +11,8 @@ from pydantic import BaseModel
 
 from app.agents.lead._logging import llm_meta_fields
 from app.llm.base import LLMParseError, LLMProvider
-from app.prompts.fastest_win_select import PROMPT
-from app.schemas import Opportunity
+from app.prompts import fastest_win_select as fw_prompt
+from app.schemas import Opportunity, RunContext
 from app.structured_logging import get_logger
 
 
@@ -24,14 +24,22 @@ class _Wrap(BaseModel):
     selected_index: int
 
 
-def run(*, provider: LLMProvider, opportunities: list[Opportunity]) -> Opportunity | None:
+def run(
+    *,
+    provider: LLMProvider,
+    opportunities: list[Opportunity],
+    run_context: RunContext | None = None,
+) -> Opportunity | None:
     """Select the fastest-win opportunity; deterministic sort fallback when the LLM fails or returns OOB."""
     started = time.perf_counter()
     logger.info("agent.lead.started", agent="fastest_win_select", opportunity_count=len(opportunities))
     if not opportunities:
         logger.warning("agent.lead.completed", agent="fastest_win_select", selected=False, reason="no_opportunities")
         return None
-    prompt = PROMPT.format(opportunities_json=json.dumps([o.model_dump() for o in opportunities], indent=2))
+    prompt = fw_prompt.render(
+        run_context=run_context,
+        opportunities_json=json.dumps([o.model_dump() for o in opportunities], indent=2),
+    )
     result, meta = provider.generate_json(prompt_name="fastest_win_select", prompt=prompt, schema=_Wrap)
     if not meta.parsed_json:
         raise LLMParseError(
