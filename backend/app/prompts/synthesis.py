@@ -35,3 +35,16 @@ Constraints:
 - Avoid dropping cited records from clean summaries.
 - Do not score ROI, detect bottlenecks, select winners, or write blueprints.
 - Do not invent extraction_errors for normal open questions."""
+
+from app.prompts._steering import Role, render_priorities_block
+from app.schemas import RunContext
+
+
+def render(*, run_context: RunContext | None = None, **format_kwargs) -> str:
+    """Render the synthesis prompt with an optional Operator priorities block.
+
+    When ``run_context`` is None or empty, output is byte-identical to
+    ``PROMPT.format(**format_kwargs)`` — baseline behavior preserved.
+    """
+    base = PROMPT.format(**format_kwargs)
+    return base + render_priorities_block(role=Role.SYNTHESIS, run_context=run_context)

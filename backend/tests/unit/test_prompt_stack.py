@@ -142,3 +142,34 @@ def test_render_brief_with_user_context_includes_priorities_block():
     assert "focus onboarding" in brief
     # recall caveat from PER_FILE role
     assert "Still extract" in brief
+
+
+def test_synthesis_render_without_context_matches_baseline():
+    """render(run_context=None) is byte-identical to PROMPT.format(...) — baseline preserved."""
+    from app.prompts import synthesis as synth_prompt
+    baseline = synth_prompt.PROMPT.format(summaries_json="{}")
+    rendered = synth_prompt.render(run_context=None, summaries_json="{}")
+    assert rendered == baseline
+
+
+def test_synthesis_render_with_blank_context_matches_baseline():
+    """Whitespace-only steering is treated as absent — byte-identical baseline."""
+    from app.prompts import synthesis as synth_prompt
+    from app.schemas import RunContext
+    baseline = synth_prompt.PROMPT.format(summaries_json="{}")
+    rendered = synth_prompt.render(
+        run_context=RunContext(user_context="   "),
+        summaries_json="{}",
+    )
+    assert rendered == baseline
+
+
+def test_synthesis_render_with_steering_appends_priorities_block():
+    """Populated steering appends the SYNTHESIS role's priorities block."""
+    from app.prompts import synthesis as synth_prompt
+    from app.schemas import RunContext
+    ctx = RunContext(user_context="focus onboarding")
+    rendered = synth_prompt.render(run_context=ctx, summaries_json="{}")
+    assert "Operator priorities" in rendered
+    assert "focus onboarding" in rendered
+    assert "do not drop" in rendered.lower()
