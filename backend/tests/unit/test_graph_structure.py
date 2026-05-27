@@ -147,3 +147,48 @@ def test_per_file_fanout_threads_user_context_into_agent_run(monkeypatch):
         pass
 
     assert seen == ["focus onboarding"]
+
+
+def test_build_graph_passes_run_context_into_synthesis_run(monkeypatch):
+    """The synthesis_node closure forwards build_graph's run_context kwarg into synthesis.run."""
+    from app.graph import build_graph, initial_state
+    from app.schemas import IntakeBundle, RunContext, SummaryReview
+
+    seen: dict = {}
+
+    def fake_synth_run(*, provider, file_summaries, run_context=None):
+        seen["run_context"] = run_context
+        return IntakeBundle(
+            workflows=[], pain_signals=[], lead_rows=[],
+            contradictions=[], file_index=[], extraction_errors=[],
+        )
+
+    monkeypatch.setattr("app.agents.lead.synthesis.run", fake_synth_run)
+    # Stub the others so the graph can run past synthesis without LLMs.
+    monkeypatch.setattr(
+        "app.agents.lead.review_summaries.run",
+        lambda **kw: SummaryReview(revision_requests=[], notes=""),
+    )
+    monkeypatch.setattr("app.agents.lead.workflow_map.run", lambda **kw: [])
+    monkeypatch.setattr("app.agents.lead.bottleneck_detect.run", lambda **kw: [])
+    monkeypatch.setattr("app.agents.lead.roi_score.run", lambda **kw: [])
+    monkeypatch.setattr("app.agents.lead.fastest_win_select.run", lambda **kw: None)
+    monkeypatch.setattr("app.agents.lead.solution_blueprint.run", lambda **kw: None)
+    monkeypatch.setattr("app.agents.lead.self_review_final.run", lambda **kw: None)
+
+    class FakeProvider:
+        name = "fake"
+        model = "fake"
+
+    ctx = RunContext(user_context="focus onboarding")
+    graph = build_graph(provider=FakeProvider(), parsed_files={}, run_context=ctx)
+    try:
+        graph.invoke(initial_state("r_test", [], run_context=ctx),
+                     config={"configurable": {"thread_id": "r_test"}})
+    except Exception:
+        pass  # We only care synthesis.run saw run_context
+
+    assert seen.get("run_context") is not None, (
+        f"synthesis.run was not called with run_context; seen keys: {list(seen)}"
+    )
+    assert seen["run_context"].user_context == "focus onboarding"

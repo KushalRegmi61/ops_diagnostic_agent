@@ -295,7 +295,7 @@ def build_graph(
         emit("graph_node_started", "Synthesizing cross-file intake bundle", "synthesis", node="synthesis")
         with node_span("synthesis"):
             try:
-                bundle = synthesis.run(provider=provider, file_summaries=state["file_summaries"])
+                bundle = synthesis.run(provider=provider, file_summaries=state["file_summaries"], run_context=run_context)
             except LLMParseError as err:
                 logger.error("graph.node.failed", node="synthesis", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Synthesis failed: parsed_json=False", "synthesis", "error",
@@ -390,7 +390,7 @@ def build_graph(
         emit("graph_node_started", "Detecting bottlenecks", "diagnose", node="bottleneck_detect")
         with node_span("bottleneck_detect"):
             try:
-                bns = bottleneck_detect.run(provider=provider, bundle=b, workflows=state["workflows"])
+                bns = bottleneck_detect.run(provider=provider, bundle=b, workflows=state["workflows"], run_context=run_context)
             except LLMParseError as err:
                 logger.error("graph.node.failed", node="bottleneck_detect", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Bottleneck detection failed: parsed_json=False", "diagnose", "error",
@@ -461,7 +461,7 @@ def build_graph(
         emit("graph_node_started", "Selecting fastest win", "select", node="fastest_win_select")
         with node_span("fastest_win_select"):
             try:
-                sel = fastest_win_select.run(provider=provider, opportunities=state["opportunities"])
+                sel = fastest_win_select.run(provider=provider, opportunities=state["opportunities"], run_context=run_context)
             except LLMParseError as err:
                 logger.error("graph.node.failed", node="fastest_win_select", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Fastest win selection failed: parsed_json=False", "select", "error",
@@ -525,6 +525,7 @@ def build_graph(
                 bp = solution_blueprint.run(
                     provider=provider, bundle=b, selected=sel,
                     selected_index=idx, revision_detail=detail,
+                    run_context=run_context,
                 )
             except LLMParseError as err:
                 logger.error("graph.node.failed", node="solution_blueprint", stage=err.stage, error=err.message)
@@ -606,6 +607,7 @@ def build_graph(
                     file_summaries=state["file_summaries"],
                     parsed_files=parsed_files,
                     revised_once=state.get("revision_count", 0) > 0,
+                    run_context=run_context,
                 )
             except LLMParseError as err:
                 logger.error("graph.node.failed", node="self_review_final", stage=err.stage, error=err.message)
