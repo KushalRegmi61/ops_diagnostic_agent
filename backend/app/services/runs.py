@@ -175,6 +175,10 @@ def start_run(
 ) -> Blueprint | None:
     """Invoke the diagnostic graph for an existing run and persist outputs.
 
+    Reconstructs RunContext from Run.run_context_json if present, threads it
+    into build_graph and initial_state, and persists file_summaries / bundle /
+    blueprint as JSON rows.
+
     Returns the final Blueprint (or None if the chain produced no blueprint).
     """
     clear_context()
