@@ -20,7 +20,7 @@ from app.llm import get_provider
 from app.models import BlueprintRecord, FileRecord, FileSummaryRecord, IntakeBundleRecord, Run
 from app.observability import trace_run
 from app.parsers import parse as parse_file
-from app.schemas import Blueprint, FileRef
+from app.schemas import Blueprint, FileRef, RunContext
 from app.structured_logging import bind_context, clear_context, get_logger
 
 
@@ -180,13 +180,32 @@ def start_run(
     clear_context()
     bind_context(run_id=run_id)
     started = time.perf_counter()
-    logger.info("run.start.started", redo_cap=redo_cap, revision_cap=revision_cap)
-    _emit(on_event, "run_started", "Diagnostic run started", "start", redo_cap=redo_cap, revision_cap=revision_cap)
     run = db.get(Run, run_id)
     if run is None:
         logger.warning("run.start.missing")
         _emit(on_event, "run_missing", "Run was not found", "start", "warning")
         raise RunNotFoundError(f"run {run_id} not found")
+
+    run_context: RunContext | None = None
+    if run.run_context_json:
+        try:
+            run_context = RunContext.model_validate_json(run.run_context_json)
+        except Exception as exc:
+            logger.warning(
+                "run.context.parse_failed",
+                run_id=run_id,
+                error=str(exc),
+            )
+            run_context = None
+
+    logger.info(
+        "run.start.started",
+        redo_cap=redo_cap,
+        revision_cap=revision_cap,
+        user_context_chars=len(run_context.user_context) if run_context and run_context.user_context else 0,
+        has_steering=run_context.has_steering() if run_context else False,
+    )
+    _emit(on_event, "run_started", "Diagnostic run started", "start", redo_cap=redo_cap, revision_cap=revision_cap)
 
     refs, parsed_files = _load_files_and_parse(db, run_id, on_event=on_event)
     run.status = "running"
@@ -207,6 +226,7 @@ def start_run(
     logger.info("run.checkpointer.ready", checkpointer=type(checkpointer).__name__ if checkpointer else None)
     graph = build_graph(
         provider=provider, parsed_files=parsed_files,
+        run_context=run_context,
         redo_cap=redo_cap, revision_cap=revision_cap,
         checkpointer=checkpointer,
         on_event=on_event,
@@ -219,7 +239,7 @@ def start_run(
             logger.info("run.trace.created", langfuse_trace_id=run_id)
         logger.info("run.graph.invoke.started", thread_id=run_id)
         _emit(on_event, "run_graph_started", "Agent graph started", "graph")
-        final_state = graph.invoke(initial_state(run_id, refs), config=config)
+        final_state = graph.invoke(initial_state(run_id, refs, run_context=run_context), config=config)
         logger.info(
             "run.graph.invoke.completed",
             file_summary_count=len(final_state.get("file_summaries") or {}),

@@ -42,6 +42,7 @@ def build_graph(
     *,
     provider: LLMProvider,
     parsed_files: dict[str, ParsedFile],
+    run_context: RunContext | None = None,
     redo_cap: int = 1,
     revision_cap: int = 1,
     checkpointer=None,
