@@ -20,15 +20,25 @@ class Base(DeclarativeBase):
     pass
 
 
+def _normalize_db_url(url: str) -> str:
+    """Pin Postgres URLs to the psycopg (v3) driver so vendor-supplied DSNs work as-is."""
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url[len("postgresql://"):]
+    if url.startswith("postgres://"):  # Heroku-style alias
+        return "postgresql+psycopg://" + url[len("postgres://"):]
+    return url
+
+
 @lru_cache(maxsize=1)
 def _build_engine() -> Engine:
     """Construct the SQLAlchemy engine from current Settings (cached per process)."""
     settings = get_settings()
+    db_url = _normalize_db_url(settings.database_url)
     eng = create_engine(
-        settings.database_url,
-        connect_args={"check_same_thread": False} if settings.database_url.startswith("sqlite") else {},
+        db_url,
+        connect_args={"check_same_thread": False} if db_url.startswith("sqlite") else {},
     )
-    if settings.database_url.startswith("sqlite"):
+    if db_url.startswith("sqlite"):
         @event.listens_for(eng, "connect")
         def _sqlite_fk_pragma(dbapi_conn, _conn_record):
             """Enable FK enforcement for every new SQLite connection."""
