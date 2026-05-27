@@ -84,3 +84,66 @@ def test_initial_state_writes_run_context_when_provided():
     ctx = RunContext(user_context="focus onboarding")
     state = initial_state("r_test", [], run_context=ctx)
     assert state["run_context"] == ctx
+
+
+def test_per_file_fanout_threads_user_context_into_agent_run(monkeypatch):
+    """build_graph closure forwards run_context.user_context into agent.run()."""
+    from app.graph import build_graph, initial_state
+    from app.schemas import FileRef, FileSummary, ParsedFile, ParsedSegment, RunContext
+
+    seen: list[str | None] = []
+
+    class FakeAgent:
+        @staticmethod
+        def run(
+            *, provider, parsed, on_tool_call=None, run_id=None,
+            trace_name=None, user_context=None,
+        ):
+            seen.append(user_context)
+            return FileSummary(
+                file_id=parsed.file_id,
+                file_name=parsed.file_name,
+                one_paragraph_summary="stub",
+                key_workflows=[], key_pain_signals=[], lead_rows=[],
+                open_questions=[], agent_notes="",
+            )
+
+    monkeypatch.setattr("app.graph.get_agent_module", lambda _ftype: FakeAgent)
+
+    # Stub all lead nodes so the graph can run end-to-end without an LLM.
+    monkeypatch.setattr("app.agents.lead.review_summaries.run", lambda **kw: None)
+    monkeypatch.setattr("app.agents.lead.synthesis.run", lambda **kw: None)
+    monkeypatch.setattr("app.agents.lead.workflow_map.run", lambda **kw: [])
+    monkeypatch.setattr("app.agents.lead.bottleneck_detect.run", lambda **kw: [])
+    monkeypatch.setattr("app.agents.lead.roi_score.run", lambda **kw: [])
+    monkeypatch.setattr("app.agents.lead.fastest_win_select.run", lambda **kw: None)
+    monkeypatch.setattr("app.agents.lead.solution_blueprint.run", lambda **kw: None)
+    monkeypatch.setattr("app.agents.lead.self_review_final.run", lambda **kw: None)
+
+    class FakeProvider:
+        name = "fake"
+        model = "fake"
+
+    parsed = ParsedFile(
+        file_id="f1", file_name="x.txt", type="txt",
+        segments=[ParsedSegment(text="hello", locator={"type": "text", "line_start": 1, "line_end": 1})],
+    )
+    refs = [FileRef(
+        file_id="f1", file_name="x.txt",
+        mime_type="text/plain", blob_path="/dev/null", parser_status="ok",
+    )]
+
+    ctx = RunContext(user_context="focus onboarding")
+    graph = build_graph(
+        provider=FakeProvider(),
+        parsed_files={"f1": parsed},
+        run_context=ctx,
+    )
+    state = initial_state("r_test", refs, run_context=ctx)
+    try:
+        graph.invoke(state, config={"configurable": {"thread_id": "r_test"}})
+    except Exception:
+        # We only care that FakeAgent.run was called with user_context.
+        pass
+
+    assert seen == ["focus onboarding"]

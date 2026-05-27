@@ -154,6 +154,11 @@ def build_graph(
                             on_tool_call=on_tool_call,
                             run_id=state["run_id"],
                             trace_name=f"per_file:{file_ref.file_id}",
+                            user_context=(
+                                run_context.user_context
+                                if (run_context and run_context.has_steering())
+                                else None
+                            ),
                         )
                     except LLMParseError as err:
                         logger.error(
