@@ -30,7 +30,7 @@ from app.agents.lead import (
 from app.llm.base import LLMParseError, LLMProvider
 from app.observability import node_span
 from app.registry import get_agent_module
-from app.schemas import ExtractionError, IntakeBundle, ParsedFile, SummaryReview
+from app.schemas import ExtractionError, IntakeBundle, ParsedFile, RunContext, SummaryReview
 from app.state import DiagnosticState
 from app.structured_logging import get_logger
 
@@ -717,11 +717,16 @@ def _final_review_ok(fr) -> bool:
     )
 
 
-def initial_state(run_id: str, files) -> DiagnosticState:
-    """Construct a starting DiagnosticState for a new run."""
+def initial_state(run_id: str, files, run_context: "RunContext | None" = None) -> DiagnosticState:
+    """Construct a starting DiagnosticState for a new run.
+
+    ``run_context`` is closure-captured by ``build_graph`` for runtime reads.
+    Storing it in state is for checkpoint-reload symmetry only — no node mutates it.
+    """
     return {
         "run_id": run_id,
         "files": list(files),
+        "run_context": run_context,
         "file_summaries": {},
         "summary_review": None,
         "redo_count": 0,

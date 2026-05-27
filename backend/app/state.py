@@ -20,6 +20,7 @@ from app.schemas import (
     FinalReview,
     IntakeBundle,
     Opportunity,
+    RunContext,
     SummaryReview,
     WorkflowRecord,
 )
@@ -30,6 +31,7 @@ class DiagnosticState(TypedDict):
 
     run_id: str
     files: list[FileRef]
+    run_context: RunContext | None
     file_summaries: dict[str, FileSummary]
     summary_review: SummaryReview | None
     redo_count: int

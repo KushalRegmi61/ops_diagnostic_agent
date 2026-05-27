@@ -7,7 +7,7 @@ import inspect
 
 from app.graph import _final_review_ok, build_graph, initial_state
 import app.graph as graph_module
-from app.schemas import FinalReview
+from app.schemas import FinalReview, RunContext
 
 
 class _StubProvider:
@@ -71,3 +71,16 @@ def test_parent_graph_passes_run_context_to_per_file_agents():
 
     assert 'run_id=state["run_id"]' in source
     assert 'trace_name=f"per_file:{file_ref.file_id}"' in source
+
+
+def test_initial_state_defaults_run_context_to_none():
+    """initial_state called without run_context produces state['run_context'] is None."""
+    state = initial_state("r_test", [])
+    assert state["run_context"] is None
+
+
+def test_initial_state_writes_run_context_when_provided():
+    """initial_state called with a RunContext stores it under 'run_context'."""
+    ctx = RunContext(user_context="focus onboarding")
+    state = initial_state("r_test", [], run_context=ctx)
+    assert state["run_context"] == ctx
