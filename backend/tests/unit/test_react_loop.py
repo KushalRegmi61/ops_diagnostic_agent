@@ -95,3 +95,63 @@ def test_run_react_loop_accepts_run_context_kwarg(monkeypatch):
     # and a FileSummary (partial fallback shape) is returned.
     assert result is not None
     assert result.file_id == "f1"
+
+
+def test_docx_wrapper_passes_user_context_through(monkeypatch):
+    """The DOCX wrapper threads user_context into run_react_loop as a RunContext."""
+    from app.agents.per_file import docx as docx_agent
+    from app.schemas import FileSummary
+
+    captured: dict = {}
+
+    def fake_loop(**kwargs):
+        captured.update(kwargs)
+        return FileSummary(
+            file_id="f1",
+            file_name="x.docx",
+            one_paragraph_summary="stub",
+            key_workflows=[],
+            key_pain_signals=[],
+            lead_rows=[],
+            open_questions=[],
+            agent_notes="",
+        )
+
+    monkeypatch.setattr(docx_agent, "run_react_loop", fake_loop)
+
+    from app.schemas import ParsedFile
+    parsed = ParsedFile(file_id="f1", file_name="x.docx", type="docx", segments=[])
+    docx_agent.run(provider=object(), parsed=parsed, user_context="focus onboarding")
+
+    ctx = captured.get("run_context")
+    assert ctx is not None, f"run_react_loop was not called with run_context; got kwargs={list(captured)}"
+    assert ctx.user_context == "focus onboarding"
+
+
+def test_docx_wrapper_without_user_context_passes_none_run_context(monkeypatch):
+    """When the wrapper is called without user_context, run_react_loop receives run_context=None."""
+    from app.agents.per_file import docx as docx_agent
+    from app.schemas import FileSummary
+
+    captured: dict = {}
+
+    def fake_loop(**kwargs):
+        captured.update(kwargs)
+        return FileSummary(
+            file_id="f1",
+            file_name="x.docx",
+            one_paragraph_summary="stub",
+            key_workflows=[],
+            key_pain_signals=[],
+            lead_rows=[],
+            open_questions=[],
+            agent_notes="",
+        )
+
+    monkeypatch.setattr(docx_agent, "run_react_loop", fake_loop)
+
+    from app.schemas import ParsedFile
+    parsed = ParsedFile(file_id="f1", file_name="x.docx", type="docx", segments=[])
+    docx_agent.run(provider=object(), parsed=parsed)
+
+    assert captured.get("run_context") is None
