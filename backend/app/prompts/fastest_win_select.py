@@ -34,3 +34,16 @@ Constraints:
 - Avoid returning an out-of-range index.
 - Do not rewrite, rescore, merge, or explain opportunities.
 - Select exactly one."""
+
+from app.prompts._steering import Role, render_priorities_block
+from app.schemas import RunContext
+
+
+def render(*, run_context: RunContext | None = None, **format_kwargs) -> str:
+    """Render fastest_win_select with an optional Operator priorities block (SELECTION role).
+
+    When ``run_context`` is None or empty, output is byte-identical to
+    ``PROMPT.format(**format_kwargs)`` — baseline behavior preserved.
+    """
+    base = PROMPT.format(**format_kwargs)
+    return base + render_priorities_block(role=Role.SELECTION, run_context=run_context)

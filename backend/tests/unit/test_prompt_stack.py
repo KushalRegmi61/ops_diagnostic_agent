@@ -210,3 +210,36 @@ def test_bottleneck_detect_render_with_steering_uses_ranking_role():
     lowered = rendered.lower()
     assert "tiebreak" in lowered or "rank" in lowered
     assert "do not omit" in lowered or "lower" in lowered
+
+
+def _fw_kwargs():
+    """Sample format kwargs for fastest_win_select."""
+    return {"opportunities_json": "[]"}
+
+
+def test_fastest_win_select_render_without_context_matches_baseline():
+    """Baseline byte-identity preserved when no steering."""
+    from app.prompts import fastest_win_select as fw_prompt
+    assert fw_prompt.render(run_context=None, **_fw_kwargs()) == fw_prompt.PROMPT.format(**_fw_kwargs())
+
+
+def test_fastest_win_select_render_with_blank_context_matches_baseline():
+    """Whitespace-only steering → baseline byte-identity."""
+    from app.prompts import fastest_win_select as fw_prompt
+    from app.schemas import RunContext
+    assert fw_prompt.render(
+        run_context=RunContext(user_context="   "),
+        **_fw_kwargs(),
+    ) == fw_prompt.PROMPT.format(**_fw_kwargs())
+
+
+def test_fastest_win_select_render_with_steering_uses_selection_role():
+    """Populated steering → SELECTION-role block: 'prefer' + 'largest ROI'."""
+    from app.prompts import fastest_win_select as fw_prompt
+    from app.schemas import RunContext
+    ctx = RunContext(user_context="focus onboarding")
+    rendered = fw_prompt.render(run_context=ctx, **_fw_kwargs())
+    assert "Operator priorities" in rendered
+    lowered = rendered.lower()
+    assert "prefer" in lowered
+    assert "largest roi" in lowered or "even if not the largest" in lowered
