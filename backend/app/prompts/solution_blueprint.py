@@ -6,6 +6,9 @@ phrase followed by 1–2 short sentences — so the UI renders a clean, executiv
 brief instead of essay-style paragraphs.
 """
 
+from app.prompts._steering import Role, render_priorities_block
+from app.schemas import RunContext
+
 PROMPT = """Act as a senior automation solution architect.
 
 Your task is to write the final cited Blueprint for the selected Opportunity as a scannable, executive-ready brief.
@@ -51,3 +54,13 @@ Constraints:
 - Avoid bare source strings such as "f1"; sources must be full objects.
 - Avoid hallucinating vendor names, APIs, fields, or SLAs not present in the selected opportunity or bundle.
 - Keep steps implementable, sequenced, and specific enough that an engineer or operations lead can act on them."""
+
+
+def render(*, run_context: RunContext | None = None, **format_kwargs) -> str:
+    """Render solution_blueprint with an optional Operator priorities block (FRAMING role).
+
+    When ``run_context`` is None or empty, output is byte-identical to
+    ``PROMPT.format(**format_kwargs)`` — baseline behavior preserved.
+    """
+    base = PROMPT.format(**format_kwargs)
+    return base + render_priorities_block(role=Role.FRAMING, run_context=run_context)

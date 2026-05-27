@@ -243,3 +243,34 @@ def test_fastest_win_select_render_with_steering_uses_selection_role():
     lowered = rendered.lower()
     assert "prefer" in lowered
     assert "largest roi" in lowered or "even if not the largest" in lowered
+
+
+def _sb_kwargs():
+    """Sample format kwargs for solution_blueprint."""
+    return {"bundle_json": "{}", "selected_index": 0, "selected_json": "{}"}
+
+
+def test_solution_blueprint_render_without_context_matches_baseline():
+    """Baseline byte-identity preserved when no steering."""
+    from app.prompts import solution_blueprint as sb_prompt
+    assert sb_prompt.render(run_context=None, **_sb_kwargs()) == sb_prompt.PROMPT.format(**_sb_kwargs())
+
+
+def test_solution_blueprint_render_with_blank_context_matches_baseline():
+    """Whitespace-only steering → baseline byte-identity."""
+    from app.prompts import solution_blueprint as sb_prompt
+    from app.schemas import RunContext
+    assert sb_prompt.render(
+        run_context=RunContext(user_context="   "),
+        **_sb_kwargs(),
+    ) == sb_prompt.PROMPT.format(**_sb_kwargs())
+
+
+def test_solution_blueprint_render_with_steering_uses_framing_role():
+    """Populated steering → FRAMING-role block: 'frame'."""
+    from app.prompts import solution_blueprint as sb_prompt
+    from app.schemas import RunContext
+    ctx = RunContext(user_context="focus onboarding")
+    rendered = sb_prompt.render(run_context=ctx, **_sb_kwargs())
+    assert "Operator priorities" in rendered
+    assert "frame" in rendered.lower()
