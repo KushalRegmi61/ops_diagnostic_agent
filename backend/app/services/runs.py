@@ -213,7 +213,11 @@ def start_run(
 
     refs, parsed_files = _load_files_and_parse(db, run_id, on_event=on_event)
     run.status = "running"
-    db.flush()
+    # Commit (not just flush) so Postgres releases the implicit transaction
+    # before we burn minutes inside graph.invoke(). Neon — and managed Postgres
+    # in general — kills idle-in-transaction connections (~5 min); holding the
+    # tx across LLM-bound work made post-graph persistence reliably fail.
+    db.commit()
     logger.info("run.status.updated", status=run.status)
     _emit(on_event, "run_status_updated", "Run is now active", "start", status=run.status)
 

@@ -37,6 +37,12 @@ def _build_engine() -> Engine:
     eng = create_engine(
         db_url,
         connect_args={"check_same_thread": False} if db_url.startswith("sqlite") else {},
+        # pool_pre_ping rescues us from connections killed by Postgres while
+        # the pool wasn't looking (Neon's idle-in-transaction timeout, network
+        # blips, etc.). One extra round-trip per checkout is cheap insurance.
+        pool_pre_ping=not db_url.startswith("sqlite"),
+        # Recycle connections proactively so we don't even attempt a corpse.
+        pool_recycle=300 if not db_url.startswith("sqlite") else -1,
     )
     if db_url.startswith("sqlite"):
         @event.listens_for(eng, "connect")
