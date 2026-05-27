@@ -48,12 +48,13 @@ def build_checkpointer():
     settings = get_settings()
     # langgraph-checkpoint-redis requires Redis Stack (RedisJSON + RediSearch
     # modules) — plain redis-server is not sufficient. See backend/README.md.
-    ttl_config: dict | None = None
-    if settings.langgraph_checkpoint_ttl_minutes is not None:
-        ttl_config = {
-            "default_ttl": settings.langgraph_checkpoint_ttl_minutes,
-            "refresh_on_read": settings.langgraph_checkpoint_refresh_on_read,
-        }
+    # TTL is hard-capped at 10 min defensively: Redis Cloud free tier is 30 MB,
+    # and config drift must not silently bloat retention.
+    ttl_minutes = min(settings.langgraph_checkpoint_ttl_minutes, 10)
+    ttl_config = {
+        "default_ttl": ttl_minutes,
+        "refresh_on_read": settings.langgraph_checkpoint_refresh_on_read,
+    }
     saver = RedisSaver(redis_url=settings.redis_url, ttl=ttl_config)
     if hasattr(saver, "setup"):
         saver.setup()

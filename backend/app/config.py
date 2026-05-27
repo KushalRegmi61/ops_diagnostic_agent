@@ -47,10 +47,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     langgraph_checkpointer: Literal["redis"] = "redis"
     langgraph_checkpoint_namespace: str = "ops_diagnostic"
-    # TTL for LangGraph checkpoint keys in Redis, in minutes. None disables expiry
-    # (keys persist until manually deleted). Default 1440 = 24h, enough to debug a
-    # failed run the next morning while preventing unbounded growth.
-    langgraph_checkpoint_ttl_minutes: int | None = 1440
+    # TTL for LangGraph checkpoint keys in Redis, in minutes. Hard-capped at 10
+    # to stay within Redis Cloud's free 30 MB tier — long-running debugging
+    # should rely on Langfuse traces, not Redis state retention. None is no
+    # longer allowed; the cap is enforced by the validator below.
+    langgraph_checkpoint_ttl_minutes: int = 10
     # If True, reading a checkpoint refreshes its TTL — useful for long-running
     # human-in-the-loop flows that should stay alive while a human is engaged.
     langgraph_checkpoint_refresh_on_read: bool = False
@@ -81,6 +82,18 @@ class Settings(BaseSettings):
         """Accept JSON-style lists or comma-separated env values for frontend origins."""
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
+
+    @field_validator("langgraph_checkpoint_ttl_minutes")
+    @classmethod
+    def _cap_checkpoint_ttl(cls, value: int) -> int:
+        """Reject TTLs > 10 min to keep Redis Cloud free-tier usage bounded."""
+        if value <= 0 or value > 10:
+            raise ValueError(
+                "langgraph_checkpoint_ttl_minutes must be in (0, 10]; "
+                "got "
+                f"{value}. Lengthen debugging visibility via Langfuse, not Redis."
+            )
         return value
 
 

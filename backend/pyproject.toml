@@ -27,6 +27,7 @@ dependencies = [
   "langchain>=1.0.0",
   "langchain-openai>=1.0.0",
   "langchain-ollama>=1.0.0",
+  "psycopg[binary]>=3.2",
 ]
 
 [project.optional-dependencies]
