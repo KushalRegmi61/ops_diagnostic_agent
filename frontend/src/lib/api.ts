@@ -121,11 +121,20 @@ export async function uploadEvidenceFile(file: File): Promise<FileRef> {
   });
 }
 
-/** Start a diagnostic run for uploaded file ids. */
-export async function createRun(fileIds: string[]): Promise<RunResponse> {
+/** Start a diagnostic run for uploaded file ids, optionally steered by operator text. */
+export async function createRun(
+  fileIds: string[],
+  userContext?: string | null,
+): Promise<RunResponse> {
+  const trimmed = userContext?.trim();
+  const body: { file_ids: string[]; user_context?: string } = {
+    file_ids: fileIds,
+  };
+  if (trimmed) body.user_context = trimmed;
+
   return requestJson<RunResponse>("/api/runs", {
     method: "POST",
-    body: JSON.stringify({ file_ids: fileIds }),
+    body: JSON.stringify(body),
   });
 }
 

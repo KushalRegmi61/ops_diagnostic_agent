@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleDot,
+  Compass,
   Database,
   FileText,
   Gauge,
@@ -41,6 +42,7 @@ import {
   ReactNode,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -72,6 +74,9 @@ type TimelineStep = {
 };
 
 type AccentKey = "indigo" | "teal" | "amber" | "rose";
+
+/** Operator steering text cap — mirrors backend RunContext.user_context max_length. */
+const USER_CONTEXT_MAX = 2000;
 
 const TERMINAL_RUN_EVENT_TYPES = new Set(["run_completed", "run_failed"]);
 
@@ -443,6 +448,17 @@ export function DiagnosticWorkspace() {
   const [dragOver, setDragOver] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
+  const [userContext, setUserContext] = useState("");
+  const [submittedContext, setSubmittedContext] = useState<string | null>(null);
+  const steeringRef = useRef<HTMLTextAreaElement | null>(null);
+
+  /** Auto-grow the steering textarea like Claude/ChatGPT's composer. */
+  useEffect(() => {
+    const el = steeringRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = `${Math.min(el.scrollHeight, 360)}px`;
+  }, [userContext]);
 
   /** Tick a live elapsed-time counter while a run is in flight. */
   useEffect(() => {
@@ -540,7 +556,12 @@ export function DiagnosticWorkspace() {
       }
 
       setStatus("running");
-      const createdRun = await createRun(refs.map((f) => f.file_id));
+      const trimmedContext = userContext.trim();
+      setSubmittedContext(trimmedContext ? trimmedContext : null);
+      const createdRun = await createRun(
+        refs.map((f) => f.file_id),
+        trimmedContext || null,
+      );
       setRun(createdRun);
 
       await waitForRunCompletion(createdRun.run_id, (event) => {
@@ -569,11 +590,20 @@ export function DiagnosticWorkspace() {
     setRunEvents([]);
     setRunStartedAt(null);
     setElapsed(0);
+    setUserContext("");
+    setSubmittedContext(null);
   }
 
   const canStart =
     selectedFiles.length > 0 && status !== "uploading" && status !== "running";
   const isWorking = status === "uploading" || status === "running";
+  const showHero =
+    status === "idle" &&
+    uploadedFiles.length === 0 &&
+    run == null &&
+    blueprint == null;
+  const contextCharCount = userContext.length;
+  const overLimit = contextCharCount > USER_CONTEXT_MAX;
 
   return (
     <main className="relative z-10 min-h-screen text-[var(--fg)]">
@@ -652,8 +682,204 @@ export function DiagnosticWorkspace() {
           </div>
         ) : null}
 
-        {/* 3-column layout: left rail | center blueprint | right rail */}
-        <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_320px]">
+        {showHero ? (
+          /* IDLE — file-first composer hero, centered like a native AI input
+             but with files as the primary surface and steering text as a
+             secondary, clearly-optional aid. */
+          <section className="grid min-h-[calc(100vh-180px)] w-full gap-8 lg:grid-cols-[240px_minmax(0,1fr)]">
+            {/* Left nav — pipeline overview */}
+            <aside className="lg:sticky lg:top-[88px] lg:self-start">
+              <p className="mb-3 px-1 text-[10.5px] font-semibold uppercase tracking-[0.18em] text-[var(--fg-dim)]">
+                Pipeline
+              </p>
+              <ol className="grid gap-2">
+                {[
+                  { n: 1, label: "Parse", hint: "Typed parsers per file", icon: <FileText className="h-3.5 w-3.5" /> },
+                  { n: 2, label: "Per-file agents", hint: "Parallel ReAct loops", icon: <Workflow className="h-3.5 w-3.5" /> },
+                  { n: 3, label: "Synthesis", hint: "Cross-file bottlenecks", icon: <Sparkles className="h-3.5 w-3.5" /> },
+                  { n: 4, label: "Cited blueprint", hint: "Every claim sourced", icon: <Quote className="h-3.5 w-3.5" /> },
+                ].map((s) => (
+                  <li
+                    className="flex items-start gap-2.5 rounded-lg border border-[var(--border)] bg-white px-3 py-2.5"
+                    key={s.n}
+                  >
+                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--bg-soft)] font-mono text-[10px] text-[var(--fg-muted)]">
+                      {s.n}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="flex items-center gap-1.5 text-[12.5px] font-medium text-[var(--fg-strong)]">
+                        {s.icon}
+                        {s.label}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-[var(--fg-dim)]">
+                        {s.hint}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </aside>
+
+            {/* Main composer column — fills all remaining width */}
+            <div className="flex w-full min-w-0 flex-col">
+            <div className="mb-7 flex flex-col items-center text-center">
+              <span className="chip mb-4 border-indigo-200 text-indigo-700">
+                <Sparkles aria-hidden="true" className="h-3 w-3" />
+                File-first diagnostic · not a chatbot
+              </span>
+              <h1 className="text-balance text-[28px] font-semibold tracking-tight text-[var(--fg-strong)] lg:text-[34px]">
+                Diagnose your operation from the evidence.
+              </h1>
+              <p className="mt-3 max-w-2xl text-[15px] leading-7 text-slate-700">
+                Drop the artifacts your team already produces: transcripts,
+                docs, CSVs, MBOX threads, and get a cited automation
+                blueprint. Every claim round-trips to a real excerpt.
+              </p>
+            </div>
+
+            <div className="flex w-full flex-1 flex-col overflow-hidden">
+              {/* Primary surface — drop zone (fills available height, no card chrome) */}
+              <label
+                className={`group relative flex flex-1 cursor-pointer flex-col items-center justify-center gap-3 rounded-xl px-6 py-12 text-center transition ${
+                  dragOver
+                    ? "bg-indigo-50/60"
+                    : "bg-transparent hover:bg-indigo-50/30"
+                }`}
+                onDragLeave={() => setDragOver(false)}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDrop={onDrop}
+              >
+                <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-[0_8px_24px_-12px_rgba(79,70,229,0.4)] ring-1 ring-indigo-100">
+                  <Upload aria-hidden="true" className="h-6 w-6 text-indigo-600" />
+                </span>
+                <div className="space-y-1">
+                  <p className="text-[15px] font-semibold tracking-tight text-[var(--fg-strong)]">
+                    Drop evidence files or click to browse
+                  </p>
+                  <p className="text-[12px] text-[var(--fg-dim)]">
+                    PDF · DOCX · transcripts (VTT/SRT) · CSV · XLSX · MBOX · JSON · MD · TXT
+                  </p>
+                </div>
+                <input
+                  className="sr-only"
+                  multiple
+                  onChange={onFileChange}
+                  type="file"
+                />
+
+                {selectedFiles.length > 0 ? (
+                  <ul
+                    className="mt-3 grid w-full max-w-xl gap-1.5"
+                    onClick={(e) => e.preventDefault()}
+                  >
+                    {selectedFiles.map((file) => (
+                      <li
+                        className="flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border border-[var(--border)] bg-white py-1.5 pl-2.5 pr-1.5 text-left"
+                        key={`${file.name}-${file.lastModified}`}
+                      >
+                        <FileText
+                          aria-hidden="true"
+                          className="h-3.5 w-3.5 shrink-0 text-[var(--fg-dim)]"
+                        />
+                        <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--fg-strong)]">
+                          {file.name}
+                        </span>
+                        <span className="shrink-0 whitespace-nowrap font-mono text-[10.5px] text-[var(--fg-dim)]">
+                          {formatBytes(file.size)}
+                        </span>
+                        <button
+                          aria-label={`Remove ${file.name}`}
+                          className="ml-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--fg-dim)] transition hover:bg-rose-50 hover:text-rose-600"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            removeFile(file);
+                          }}
+                          type="button"
+                        >
+                          <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </label>
+
+              {/* Secondary surface — steering text (clearly optional, flush) */}
+              <div className="mt-6">
+                <div className="mb-2 flex items-center justify-between">
+                  <label
+                    className="flex items-center gap-2 text-[12.5px] font-semibold tracking-tight text-[var(--fg-strong)]"
+                    htmlFor="user-context"
+                  >
+                    <Compass
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 text-teal-600"
+                    />
+                    Steering
+                    <span className="rounded-full bg-[var(--bg-soft)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--fg-dim)]">
+                      optional
+                    </span>
+                  </label>
+                  <span
+                    className={`font-mono text-[10.5px] ${
+                      overLimit ? "text-rose-600" : "text-[var(--fg-dim)]"
+                    }`}
+                  >
+                    {contextCharCount} / {USER_CONTEXT_MAX}
+                  </span>
+                </div>
+                <textarea
+                  className={`block w-full resize-none overflow-y-auto rounded-lg border bg-[var(--bg-soft)]/40 px-4 py-3 text-[15.5px] leading-7 text-[var(--fg-strong)] placeholder:text-[var(--fg-dim)] focus:outline-none focus:ring-2 focus:ring-indigo-300/60 ${
+                    overLimit ? "border-rose-300" : "border-[var(--border)]"
+                  }`}
+                  id="user-context"
+                  maxLength={USER_CONTEXT_MAX}
+                  onChange={(e) => setUserContext(e.target.value)}
+                  placeholder="e.g. We're a 5-person ops team. Focus on customer onboarding, ignore billing. Bias the diagnosis toward fastest wins under 2 weeks."
+                  ref={steeringRef}
+                  rows={2}
+                  style={{ minHeight: 64 }}
+                  value={userContext}
+                />
+                <p className="mt-1.5 text-[11.5px] text-[var(--fg-dim)]">
+                  Steering biases the diagnosis order; it is never cited as
+                  evidence. Files are the source of truth.
+                </p>
+
+                <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] pt-4">
+                  <p className="text-[11.5px] text-[var(--fg-dim)]">
+                    {selectedFiles.length === 0
+                      ? "Add at least one evidence file to begin."
+                      : `${selectedFiles.length} file${selectedFiles.length === 1 ? "" : "s"} ready · ${userContext.trim() ? "steered" : "no steering"}`}
+                  </p>
+                  <button
+                    className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-lg px-5 text-[13.5px]"
+                    disabled={!canStart || overLimit}
+                    onClick={onStartRun}
+                    type="button"
+                  >
+                    {isWorking ? (
+                      <Loader2
+                        aria-hidden="true"
+                        className="h-4 w-4 animate-spin"
+                      />
+                    ) : (
+                      <Play aria-hidden="true" className="h-4 w-4" />
+                    )}
+                    Run diagnostic
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            </div>
+          </section>
+        ) : (
+          /* ACTIVE — 3-column workspace: left rail | center blueprint | right rail */
+          <div className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_320px]">
           {/* LEFT RAIL */}
           <aside className="flex flex-col gap-5 lg:sticky lg:top-[88px] lg:self-start">
             {/* Intake */}
@@ -1025,7 +1251,7 @@ export function DiagnosticWorkspace() {
                       icon={
                         <Quote aria-hidden="true" className="h-3.5 w-3.5" />
                       }
-                      label="Cited blueprint — every claim sourced"
+                      label="Cited blueprint · every claim sourced"
                       n={4}
                     />
                   </div>
@@ -1036,6 +1262,31 @@ export function DiagnosticWorkspace() {
 
           {/* RIGHT RAIL — joins center column on lg, becomes a sidebar on xl. */}
           <aside className="grid gap-5 lg:grid-cols-2 lg:col-span-2 xl:col-span-1 xl:grid-cols-1 xl:sticky xl:top-[88px] xl:self-start">
+            {/* Operator steering (read-only echo of submitted user_context) */}
+            {submittedContext ? (
+              <div className="card p-5 lg:col-span-2 xl:col-span-1">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-50 text-teal-700">
+                      <Compass aria-hidden="true" className="h-4 w-4" />
+                    </span>
+                    <h2 className="text-[15px] font-semibold tracking-tight text-[var(--fg-strong)]">
+                      Steering
+                    </h2>
+                  </div>
+                  <span className="chip border-teal-200 text-teal-700">
+                    applied
+                  </span>
+                </div>
+                <p className="mt-3 whitespace-pre-wrap rounded-md border border-[var(--border)] bg-[var(--bg-soft)]/60 p-3 text-[12.5px] leading-6 text-[var(--fg-strong)]">
+                  {submittedContext}
+                </p>
+                <p className="mt-2 text-[11px] text-[var(--fg-dim)]">
+                  Biases ranking and synthesis. Never cited as a source.
+                </p>
+              </div>
+            ) : null}
+
             {/* Parsed evidence */}
             <div className="card p-5">
               <div className="flex items-center justify-between">
@@ -1143,7 +1394,8 @@ export function DiagnosticWorkspace() {
               </div>
             </div>
           </aside>
-        </div>
+          </div>
+        )}
 
         <footer className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] pt-5 text-[11px] text-[var(--fg-dim)]">
           <span>
