@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     frontend_cors_origins: Annotated[list[str], NoDecode] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "https://ops-diagnostic-agent.vercel.app",
     ]
 
     llm_provider: Literal["ollama", "openai", "groq", "openai_compatible"] = "openai"
