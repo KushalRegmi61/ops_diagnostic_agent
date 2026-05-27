@@ -37,3 +37,16 @@ Constraints:
 - Avoid bottlenecks without a supporting pain signal or workflow source.
 - Do not score ROI, estimate savings, select a winner, or propose an automation.
 - Keep one bottleneck per distinct problem; do not duplicate the same signal for the same workflow."""
+
+from app.prompts._steering import Role, render_priorities_block
+from app.schemas import RunContext
+
+
+def render(*, run_context: RunContext | None = None, **format_kwargs) -> str:
+    """Render bottleneck_detect with an optional Operator priorities block (RANKING role).
+
+    When ``run_context`` is None or empty, output is byte-identical to
+    ``PROMPT.format(**format_kwargs)`` — baseline behavior preserved.
+    """
+    base = PROMPT.format(**format_kwargs)
+    return base + render_priorities_block(role=Role.RANKING, run_context=run_context)

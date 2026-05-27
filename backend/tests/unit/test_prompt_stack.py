@@ -173,3 +173,40 @@ def test_synthesis_render_with_steering_appends_priorities_block():
     assert "Operator priorities" in rendered
     assert "focus onboarding" in rendered
     assert "do not drop" in rendered.lower()
+
+
+def _bd_kwargs():
+    """Sample format kwargs matching bottleneck_detect.PROMPT placeholders."""
+    return {"bundle_json": "{}", "workflows_json": "[]"}
+
+
+def test_bottleneck_detect_render_without_context_matches_baseline():
+    """Baseline byte-identity: no steering → output equals PROMPT.format(...)."""
+    from app.prompts import bottleneck_detect as bd_prompt
+    baseline = bd_prompt.PROMPT.format(**_bd_kwargs())
+    rendered = bd_prompt.render(run_context=None, **_bd_kwargs())
+    assert rendered == baseline
+
+
+def test_bottleneck_detect_render_with_blank_context_matches_baseline():
+    """Whitespace-only steering → still byte-identical baseline."""
+    from app.prompts import bottleneck_detect as bd_prompt
+    from app.schemas import RunContext
+    baseline = bd_prompt.PROMPT.format(**_bd_kwargs())
+    rendered = bd_prompt.render(
+        run_context=RunContext(user_context="   "),
+        **_bd_kwargs(),
+    )
+    assert rendered == baseline
+
+
+def test_bottleneck_detect_render_with_steering_uses_ranking_role():
+    """Populated steering → appends RANKING-role block (tiebreak phrasing)."""
+    from app.prompts import bottleneck_detect as bd_prompt
+    from app.schemas import RunContext
+    ctx = RunContext(user_context="focus onboarding")
+    rendered = bd_prompt.render(run_context=ctx, **_bd_kwargs())
+    assert "Operator priorities" in rendered
+    lowered = rendered.lower()
+    assert "tiebreak" in lowered or "rank" in lowered
+    assert "do not omit" in lowered or "lower" in lowered
