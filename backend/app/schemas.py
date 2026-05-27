@@ -10,7 +10,7 @@ against these schemas.
 """
 from typing import Literal, Union
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PdfLocator(BaseModel):
@@ -291,3 +291,22 @@ class FinalReview(BaseModel):
     internal_consistency_ok: bool
     detail: str
     revised_once: bool
+
+
+class RunContext(BaseModel):
+    """Operator-provided steering carried through the parent graph and per-file subgraph.
+
+    Today carries only ``user_context``. Designed to absorb future structured
+    fields (examples, glossary, exclude lists, weights) without re-plumbing
+    every node signature.
+    """
+
+    user_context: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="Free-text operator priorities. Never cited as a Source.",
+    )
+
+    def has_steering(self) -> bool:
+        """Return True iff at least one steering field is populated (non-whitespace)."""
+        return bool(self.user_context and self.user_context.strip())
