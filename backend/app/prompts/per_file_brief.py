@@ -4,6 +4,9 @@ The brief is intentionally identical across file types so summaries
 are comparable. File-type-specific guidance is appended per-agent.
 """
 
+from app.prompts._steering import Role, render_priorities_block
+from app.schemas import RunContext
+
 EXTRACTION_BRIEF = """Act as a senior operations diagnostician and evidence auditor.
 
 Your task is to inspect one parsed file and build a cited FileSummary through tool calls.
@@ -60,12 +63,19 @@ def render_brief(
     file_type: str,
     segment_count: int,
     iteration_cap: int,
+    user_context: str | None = None,
 ) -> str:
-    """Return the per-file extraction brief with file metadata interpolated."""
-    return EXTRACTION_BRIEF.format(
+    """Render the per-file extraction brief. Appends an Operator priorities
+    block when ``user_context`` is set (steering hint — does not filter)."""
+    base = EXTRACTION_BRIEF.format(
         file_id=file_id,
         file_name=file_name,
         file_type=file_type,
         segment_count=segment_count,
         iteration_cap=iteration_cap,
     )
+    steering = render_priorities_block(
+        role=Role.PER_FILE,
+        run_context=RunContext(user_context=user_context) if user_context else None,
+    )
+    return base + steering

@@ -107,3 +107,38 @@ def test_per_file_suffixes_are_concise_locator_guidance(suffix: str):
     assert "Reply ONLY" not in suffix
     assert "Persona" not in suffix
     assert len(suffix.split()) <= 30
+
+
+def test_render_brief_without_user_context_omits_priorities_block():
+    """No steering → the brief contains no 'Operator priorities' header."""
+    from app.prompts.per_file_brief import render_brief
+    brief = render_brief(
+        file_id="f1", file_name="x.txt", file_type="txt",
+        segment_count=3, iteration_cap=6,
+    )
+    assert "Operator priorities" not in brief
+
+
+def test_render_brief_with_blank_user_context_omits_block():
+    """Whitespace-only user_context behaves like None."""
+    from app.prompts.per_file_brief import render_brief
+    brief = render_brief(
+        file_id="f1", file_name="x.txt", file_type="txt",
+        segment_count=3, iteration_cap=6,
+        user_context="   ",
+    )
+    assert "Operator priorities" not in brief
+
+
+def test_render_brief_with_user_context_includes_priorities_block():
+    """A populated user_context renders the per-file priorities block (with recall caveat)."""
+    from app.prompts.per_file_brief import render_brief
+    brief = render_brief(
+        file_id="f1", file_name="x.txt", file_type="txt",
+        segment_count=3, iteration_cap=6,
+        user_context="focus onboarding",
+    )
+    assert "Operator priorities" in brief
+    assert "focus onboarding" in brief
+    # recall caveat from PER_FILE role
+    assert "Still extract" in brief
