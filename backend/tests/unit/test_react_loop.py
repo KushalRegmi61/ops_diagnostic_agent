@@ -1,0 +1,97 @@
+"""Unit tests for the per-file ReAct loop's steering injection.
+
+We test ``_initial_messages`` directly — building a real ``WorkingState`` +
+``ParsedFile`` lets us inspect the SystemMessage content without invoking any
+LLM provider.
+"""
+from app.agents.per_file._react_loop import _initial_messages
+from app.agents.per_file._state import WorkingState
+from app.schemas import ParsedFile, ParsedSegment, RunContext
+
+
+def _make_parsed() -> ParsedFile:
+    return ParsedFile(
+        file_id="f1",
+        file_name="x.txt",
+        type="txt",
+        segments=[
+            ParsedSegment(text="line one", locator={"type": "text", "line_start": 1, "line_end": 1}),
+            ParsedSegment(text="line two", locator={"type": "text", "line_start": 2, "line_end": 2}),
+        ],
+    )
+
+
+def test_initial_messages_without_run_context_has_no_priorities_block():
+    """When the brief doesn't carry steering, the SystemMessage has no Operator priorities block."""
+    parsed = _make_parsed()
+    ws = WorkingState(file_id="f1", file_name="x.txt")
+    messages = _initial_messages(
+        brief="BRIEF_STUB",
+        prompt_suffix="SUFFIX",
+        parsed=parsed,
+        ws=ws,
+    )
+    system = messages[0].content
+    assert "Operator priorities" not in system
+
+
+def test_initial_messages_with_steering_in_brief_propagates_through_system_message():
+    """When the brief carries the steering block, the SystemMessage shows it."""
+    from app.prompts.per_file_brief import render_brief
+    parsed = _make_parsed()
+    ws = WorkingState(file_id="f1", file_name="x.txt")
+    brief = render_brief(
+        file_id="f1", file_name="x.txt", file_type="txt",
+        segment_count=2, iteration_cap=6,
+        user_context="focus onboarding",
+    )
+    messages = _initial_messages(
+        brief=brief,
+        prompt_suffix="SUFFIX",
+        parsed=parsed,
+        ws=ws,
+    )
+    system = messages[0].content
+    assert "Operator priorities" in system
+    assert "focus onboarding" in system
+
+
+def test_run_react_loop_accepts_run_context_kwarg(monkeypatch):
+    """The public entry point accepts run_context= without raising TypeError.
+
+    Stubs out the bound model and LangGraph machinery so no real LLM is invoked;
+    the test only verifies kwarg acceptance and that the loop returns a FileSummary.
+    """
+    from app.agents.per_file import _react_loop as rrl
+
+    monkeypatch.setattr(rrl, "render_brief", lambda **kw: "BRIEF_STUB")
+
+    class _FakeBindable:
+        def bind_tools(self, tools):
+            return self
+
+    class _FakeProvider:
+        name = "fake"
+        model = "fake"
+
+        def chat_model(self, temperature=0.0):
+            return _FakeBindable()
+
+    class _StubGraph:
+        def invoke(self, state, config=None):
+            return {"messages": [], "final_summary": None, "fallback_reason": "stub"}
+
+    monkeypatch.setattr(rrl, "_build_per_file_graph", lambda **kw: _StubGraph())
+
+    parsed = _make_parsed()
+    result = rrl.run_react_loop(
+        provider=_FakeProvider(),
+        parsed=parsed,
+        prompt_suffix="",
+        iteration_cap=2,
+        run_context=RunContext(user_context="focus onboarding"),
+    )
+    # Stub returns a fallback path — the test confirms the kwarg is accepted
+    # and a FileSummary (partial fallback shape) is returned.
+    assert result is not None
+    assert result.file_id == "f1"

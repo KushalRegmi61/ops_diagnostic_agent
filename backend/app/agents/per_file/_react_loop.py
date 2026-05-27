@@ -22,7 +22,7 @@ from app.agents.per_file._state import WorkingState
 from app.llm.base import LLMParseError, LLMProvider
 from app.observability import langchain_config
 from app.prompts.per_file_brief import render_brief
-from app.schemas import FileSummary, ParsedFile
+from app.schemas import FileSummary, ParsedFile, RunContext
 from app.structured_logging import get_logger
 
 
@@ -101,8 +101,14 @@ def run_react_loop(
     on_tool_call: Any = None,  # optional callback(name, args, result) for Langfuse
     run_id: str | None = None,
     trace_name: str | None = None,
+    run_context: RunContext | None = None,
 ) -> FileSummary:
-    """Run an explicit LangGraph tool-calling loop until finalize_summary or fallback."""
+    """Run an explicit LangGraph tool-calling loop until finalize_summary or fallback.
+
+    ``run_context`` is injected into the per-file brief as a steering hint. It
+    biases exploration order without filtering what makes it into the
+    FileSummary — recall is preserved at the per-file layer.
+    """
     started = time.perf_counter()
     ws = WorkingState(file_id=parsed.file_id, file_name=parsed.file_name)
 
@@ -112,6 +118,7 @@ def run_react_loop(
         file_type=parsed.type,
         segment_count=len(parsed.segments),
         iteration_cap=iteration_cap,
+        user_context=run_context.user_context if (run_context and run_context.has_steering()) else None,
     )
     logger.info(
         "agent.per_file.started",
@@ -123,6 +130,8 @@ def run_react_loop(
         agent_max_steps=DEFAULT_MAX_STEPS,
         run_id=run_id,
         trace_name=trace_name,
+        user_context_chars=len(run_context.user_context) if (run_context and run_context.user_context) else 0,
+        has_steering=run_context.has_steering() if run_context else False,
     )
 
     tools = list(build_tools(parsed, ws, agent_mode=True).values())
@@ -162,6 +171,8 @@ def run_react_loop(
             "segment_count": len(parsed.segments),
             "iteration_cap": iteration_cap,
             "agent_max_steps": DEFAULT_MAX_STEPS,
+            "user_context_chars": len(run_context.user_context) if (run_context and run_context.user_context) else 0,
+            "has_steering": run_context.has_steering() if run_context else False,
         },
     )
     config["recursion_limit"] = DEFAULT_MAX_STEPS
