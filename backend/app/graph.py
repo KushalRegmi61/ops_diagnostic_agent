@@ -717,7 +717,7 @@ def _final_review_ok(fr) -> bool:
     )
 
 
-def initial_state(run_id: str, files, run_context: "RunContext | None" = None) -> DiagnosticState:
+def initial_state(run_id: str, files, run_context: RunContext | None = None) -> DiagnosticState:
     """Construct a starting DiagnosticState for a new run.
 
     ``run_context`` is closure-captured by ``build_graph`` for runtime reads.
