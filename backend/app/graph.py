@@ -196,7 +196,7 @@ def build_graph(
                     "error",
                     file_id=file_ref.file_id,
                     file_name=file_ref.file_name,
-                    stage=err.stage,
+                    error_stage=err.stage,
                 )
                 return {"errors": [ExtractionError(
                     file_id=err.file_id or file_ref.file_id,
@@ -251,7 +251,7 @@ def build_graph(
             except LLMParseError as err:
                 logger.error("graph.node.failed", node="review_summaries", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Review summaries failed: parsed_json=False", "review", "error",
-                     node="review_summaries", stage=err.stage)
+                     node="review_summaries", error_stage=err.stage)
                 return {"summary_review": SummaryReview(revision_requests=[], notes="(review_summaries LLM parse failed)"), "errors": [ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message)]}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
@@ -313,7 +313,7 @@ def build_graph(
             except LLMParseError as err:
                 logger.error("graph.node.failed", node="synthesis", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Synthesis failed: parsed_json=False", "synthesis", "error",
-                     node="synthesis", stage=err.stage)
+                     node="synthesis", error_stage=err.stage)
                 empty = IntakeBundle(
                     workflows=[], pain_signals=[], lead_rows=[],
                     contradictions=[], file_index=[], extraction_errors=[],
@@ -362,7 +362,7 @@ def build_graph(
             except LLMParseError as err:
                 logger.error("graph.node.failed", node="workflow_map", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Workflow map failed: parsed_json=False", "diagnose", "error",
-                     node="workflow_map", stage=err.stage)
+                     node="workflow_map", error_stage=err.stage)
                 return {"workflows": [], "errors": [ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message)]}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
@@ -408,7 +408,7 @@ def build_graph(
             except LLMParseError as err:
                 logger.error("graph.node.failed", node="bottleneck_detect", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Bottleneck detection failed: parsed_json=False", "diagnose", "error",
-                     node="bottleneck_detect", stage=err.stage)
+                     node="bottleneck_detect", error_stage=err.stage)
                 return {"bottlenecks": [], "errors": [ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message)]}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
@@ -449,7 +449,7 @@ def build_graph(
             except LLMParseError as err:
                 logger.error("graph.node.failed", node="roi_score", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "ROI scoring failed: parsed_json=False", "score", "error",
-                     node="roi_score", stage=err.stage)
+                     node="roi_score", error_stage=err.stage)
                 return {"opportunities": [], "errors": [ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message)]}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
@@ -479,7 +479,7 @@ def build_graph(
             except LLMParseError as err:
                 logger.error("graph.node.failed", node="fastest_win_select", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Fastest win selection failed: parsed_json=False", "select", "error",
-                     node="fastest_win_select", stage=err.stage)
+                     node="fastest_win_select", error_stage=err.stage)
                 return {"selected": None, "errors": [ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message)]}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
@@ -544,7 +544,7 @@ def build_graph(
             except LLMParseError as err:
                 logger.error("graph.node.failed", node="solution_blueprint", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Solution blueprint failed: parsed_json=False", "blueprint", "error",
-                     node="solution_blueprint", stage=err.stage)
+                     node="solution_blueprint", error_stage=err.stage)
                 return {"blueprint": None, "errors": [ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message)]}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
@@ -626,7 +626,7 @@ def build_graph(
             except LLMParseError as err:
                 logger.error("graph.node.failed", node="self_review_final", stage=err.stage, error=err.message)
                 emit("graph_node_failed", "Self-review failed: parsed_json=False", "review_final", "error",
-                     node="self_review_final", stage=err.stage)
+                     node="self_review_final", error_stage=err.stage)
                 return {"final_review": None, "errors": [ExtractionError(file_id=err.file_id, stage=err.stage, message=err.message)]}
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         logger.info(
