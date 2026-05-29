@@ -39,3 +39,4 @@ def test_merge_tolerates_none():
     assert set(only_right) == {"f1"}
     only_left = merge_file_summaries({"f1": _summary("f1")}, None)
     assert set(only_left) == {"f1"}
+    assert merge_file_summaries(None, None) == {}

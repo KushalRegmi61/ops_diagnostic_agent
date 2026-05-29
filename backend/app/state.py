@@ -27,9 +27,9 @@ from app.schemas import (
 
 
 def merge_file_summaries(
-    left: dict[str, "FileSummary"] | None,
-    right: dict[str, "FileSummary"] | None,
-) -> dict[str, "FileSummary"]:
+    left: dict[str, FileSummary] | None,
+    right: dict[str, FileSummary] | None,
+) -> dict[str, FileSummary]:
     """Reducer for file_summaries across parallel per-file branches.
 
     Each branch returns {file_id: summary}; later writes (right) win per
