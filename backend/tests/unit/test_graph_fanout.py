@@ -60,3 +60,14 @@ def test_dispatch_only_targets_revision_files_on_redo():
     sends = dispatch_fanout(state)
     assert len(sends) == 1
     assert sends[0].arg["file_ref"].file_id == "f2"
+
+
+def test_invoke_config_carries_max_concurrency():
+    """The graph invoke config caps parallel per-file branches from settings."""
+    import app.services.runs as runs_mod
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    cfg = runs_mod._build_invoke_config("run_test")
+    assert cfg["configurable"]["thread_id"] == "run_test"
+    assert cfg["max_concurrency"] == get_settings().per_file_concurrency

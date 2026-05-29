@@ -15,6 +15,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.checkpointer import build_checkpointer
+from app.config import get_settings
 from app.graph import build_graph, initial_state
 from app.llm import get_provider
 from app.models import BlueprintRecord, FileRecord, FileSummaryRecord, IntakeBundleRecord, Run
@@ -165,6 +166,14 @@ def _load_files_and_parse(db: Session, run_id: str, on_event=None) -> tuple[list
     return refs, parsed
 
 
+def _build_invoke_config(run_id: str) -> dict:
+    """Invoke config for the parent graph: checkpoint thread + parallel branch cap."""
+    return {
+        "configurable": {"thread_id": run_id},
+        "max_concurrency": get_settings().per_file_concurrency,
+    }
+
+
 def start_run(
     db: Session,
     *,
@@ -240,7 +249,7 @@ def start_run(
         on_event=on_event,
     )
 
-    config = {"configurable": {"thread_id": run_id}}
+    config = _build_invoke_config(run_id)
     with trace_run(run_id) as trace:
         if trace is not None:
             run.langfuse_trace_id = run_id
