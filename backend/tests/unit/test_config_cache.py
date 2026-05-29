@@ -19,6 +19,14 @@ def test_get_settings_reflects_env_after_cache_clear(monkeypatch, tmp_path) -> N
     assert s.blob_store_dir == str(new_dir)
 
 
+def test_per_file_concurrency_defaults_to_4():
+    """per_file_concurrency caps parallel per-file branches; defaults to 4."""
+    from app.config import Settings
+
+    s = Settings(database_url="sqlite:///x.db", blob_store_dir="/tmp/blobs")
+    assert s.per_file_concurrency == 4
+
+
 def test_blob_dir_reflects_env_after_cache_clear(monkeypatch, tmp_path) -> None:
     """blob_store.blob_path_for must read Settings lazily, not at import time."""
     from app import blob_store

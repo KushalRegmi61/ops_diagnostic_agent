@@ -70,6 +70,7 @@ class Settings(BaseSettings):
 
     # Background runs
     max_concurrent_runs: int = 2
+    per_file_concurrency: int = 4
 
     # Upload safety
     max_upload_mb: int = 50
