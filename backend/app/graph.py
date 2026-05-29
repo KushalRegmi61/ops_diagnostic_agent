@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Callable
 
 from langgraph.graph import END, StateGraph
+from langgraph.types import Send
 
 from app import _langgraph_pydantic_patch  # noqa: F401  (teach Redis serializer about Pydantic)
 from app.parsers import parse as parsers_parse
@@ -48,6 +49,21 @@ def _compute_targets(state: DiagnosticState) -> tuple[set[str], str]:
     if review and review.revision_requests:
         return {r.file_id for r in review.revision_requests}, "revision_requests"
     return {f.file_id for f in state["files"]}, "initial"
+
+
+def dispatch_fanout(state: DiagnosticState) -> list[Send]:
+    """Fan out one Send per targeted file to the per_file_one node.
+
+    Each Send carries only what per_file_one needs: the run_id and the file's
+    FileRef. The branch's return value is merged into the shared channel via
+    the file_summaries / errors reducers.
+    """
+    targets, _ = _compute_targets(state)
+    return [
+        Send("per_file_one", {"run_id": state["run_id"], "file_ref": fref})
+        for fref in state["files"]
+        if fref.file_id in targets
+    ]
 
 
 def build_graph(
