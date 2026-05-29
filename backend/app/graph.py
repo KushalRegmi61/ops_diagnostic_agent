@@ -1,9 +1,10 @@
 """LangGraph parent workflow for the ops-diagnostic agent.
 
 Wiring:
-    per_file_fanout
-        → review_summaries
-            → (bounded redo) per_file_fanout | synthesis
+    per_file_setup
+        → (Send fan-out) per_file_one … → per_file_join
+            → review_summaries
+                → (bounded redo) per_file_setup | synthesis
     → workflow_map → bottleneck_detect → roi_score → fastest_win_select
         → solution_blueprint
             → self_review_final
@@ -88,22 +89,12 @@ def build_graph(
             on_event(type=type, message=message, stage=stage, level=level, data=data)
 
     # --- Nodes (each wrapped in a Langfuse span via node_span) ---
-    def per_file_fanout(state: DiagnosticState) -> dict:
-        """Run each file's per-file ReAct agent; on redo, only re-runs files flagged by review."""
-        node_started = time.perf_counter()
-        review = state.get("summary_review")
-        if review and review.revision_requests:
-            targets = {r.file_id for r in review.revision_requests}
-            reason = "revision_requests"
-        else:
-            targets = {f.file_id for f in state["files"]}
-            reason = "initial"
-
-        out = dict(state.get("file_summaries", {}) or {})
-        new_errors: list[ExtractionError] = []
+    def per_file_setup(state: DiagnosticState) -> dict:
+        """Entry node: emit the per-file phase start. Sends are dispatched by the conditional edge."""
+        targets, reason = _compute_targets(state)
         logger.info(
             "graph.node.started",
-            node="per_file_fanout",
+            node="per_file_setup",
             target_count=len(targets),
             targets=sorted(targets),
             reason=reason,
@@ -112,147 +103,142 @@ def build_graph(
             "graph_node_started",
             f"Running per-file agents for {len(targets)} files",
             "per_file",
-            node="per_file_fanout",
+            node="per_file_fanout",  # keep event contract stable for the frontend
             target_count=len(targets),
             reason=reason,
         )
-        with node_span("per_file_fanout", input={"targets": sorted(targets)}):
-            for file_ref in state["files"]:
-                if file_ref.file_id not in targets:
-                    logger.info("graph.per_file.skipped", file_id=file_ref.file_id, reason="not_targeted")
-                    continue
-                parsed = parsed_files.get(file_ref.file_id)
-                if parsed is None:
-                    # Resumability: on worker restart the closure is empty. Re-parse
-                    # from the FileRef's blob_path so the run picks up where it left
-                    # off instead of silently skipping. See audit.md C1.
-                    try:
-                        parsed = parsers_parse(
-                            file_id=file_ref.file_id,
-                            file_name=file_ref.file_name,
-                            path=Path(file_ref.blob_path),
-                            mime_type=file_ref.mime_type,
-                        )
-                        parsed_files[file_ref.file_id] = parsed  # cache for redo passes
-                        logger.info(
-                            "graph.per_file.rehydrated",
-                            file_id=file_ref.file_id,
-                            file_type=parsed.type,
-                            segment_count=len(parsed.segments),
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            "graph.per_file.skipped",
-                            file_id=file_ref.file_id,
-                            reason="rehydrate_failed",
-                            error=str(exc),
-                        )
-                        continue
-                agent = get_agent_module(parsed.type)
-                if agent is None:
-                    logger.warning(
-                        "graph.per_file.skipped",
-                        file_id=file_ref.file_id,
-                        file_type=parsed.type,
-                        reason="no_agent",
-                    )
-                    continue
-                file_started = time.perf_counter()
-                logger.info(
-                    "graph.per_file.started",
+        return {}
+
+    def per_file_one(state: dict) -> dict:
+        """Run one file's ReAct agent. Receives {run_id, file_ref} via Send.
+
+        Returns {"file_summaries": {file_id: summary}} on success, or
+        {"errors": [ExtractionError]} on parse failure. A skip (rehydrate
+        failure / no agent) returns {} so siblings are unaffected.
+        """
+        file_ref = state["file_ref"]
+        run_id = state["run_id"]
+        parsed = parsed_files.get(file_ref.file_id)
+        if parsed is None:
+            try:
+                parsed = parsers_parse(
                     file_id=file_ref.file_id,
                     file_name=file_ref.file_name,
+                    path=Path(file_ref.blob_path),
+                    mime_type=file_ref.mime_type,
+                )
+                parsed_files[file_ref.file_id] = parsed
+                logger.info(
+                    "graph.per_file.rehydrated",
+                    file_id=file_ref.file_id,
                     file_type=parsed.type,
                     segment_count=len(parsed.segments),
                 )
-                emit(
-                    "graph_per_file_started",
-                    f"Agent started for {file_ref.file_name}",
-                    "per_file",
+            except Exception as exc:
+                logger.warning(
+                    "graph.per_file.skipped",
                     file_id=file_ref.file_id,
-                    file_name=file_ref.file_name,
-                    file_type=parsed.type,
-                    segment_count=len(parsed.segments),
+                    reason="rehydrate_failed",
+                    error=str(exc),
                 )
-                with node_span(f"per_file:{file_ref.file_id}", input={"type": parsed.type}):
-                    try:
-                        summary = agent.run(
-                            provider=provider,
-                            parsed=parsed,
-                            on_tool_call=on_tool_call,
-                            run_id=state["run_id"],
-                            trace_name=f"per_file:{file_ref.file_id}",
-                            user_context=(
-                                run_context.user_context
-                                if (run_context and run_context.has_steering())
-                                else None
-                            ),
-                        )
-                    except LLMParseError as err:
-                        logger.error(
-                            "graph.per_file.failed",
-                            file_id=file_ref.file_id,
-                            stage=err.stage,
-                            error=err.message,
-                        )
-                        emit(
-                            "graph_per_file_failed",
-                            f"Per-file agent failed for {file_ref.file_name}: parsed_json=False",
-                            "per_file",
-                            "error",
-                            file_id=file_ref.file_id,
-                            file_name=file_ref.file_name,
-                            stage=err.stage,
-                        )
-                        new_errors.append(ExtractionError(
-                            file_id=err.file_id or file_ref.file_id,
-                            stage=err.stage,
-                            message=err.message,
-                        ))
-                        continue
-                out[file_ref.file_id] = summary
-                elapsed_ms = round((time.perf_counter() - file_started) * 1000)
-                logger.info(
-                    "graph.per_file.completed",
-                    file_id=file_ref.file_id,
-                    workflow_count=len(summary.key_workflows),
-                    pain_signal_count=len(summary.key_pain_signals),
-                    lead_row_count=len(summary.lead_rows),
-                    open_question_count=len(summary.open_questions),
-                    elapsed_ms=elapsed_ms,
-                )
-                emit(
-                    "graph_per_file_completed",
-                    f"Agent completed {file_ref.file_name}",
-                    "per_file",
-                    file_id=file_ref.file_id,
-                    file_name=file_ref.file_name,
-                    workflow_count=len(summary.key_workflows),
-                    pain_signal_count=len(summary.key_pain_signals),
-                    lead_row_count=len(summary.lead_rows),
-                    open_question_count=len(summary.open_questions),
-                    elapsed_ms=elapsed_ms,
-                )
-        elapsed_ms = round((time.perf_counter() - node_started) * 1000)
+                return {}
+        agent = get_agent_module(parsed.type)
+        if agent is None:
+            logger.warning(
+                "graph.per_file.skipped",
+                file_id=file_ref.file_id,
+                file_type=parsed.type,
+                reason="no_agent",
+            )
+            return {}
+        file_started = time.perf_counter()
         logger.info(
-            "graph.node.completed",
-            node="per_file_fanout",
-            output_count=len(out),
-            error_count=len(new_errors),
+            "graph.per_file.started",
+            file_id=file_ref.file_id,
+            file_name=file_ref.file_name,
+            file_type=parsed.type,
+            segment_count=len(parsed.segments),
+        )
+        emit(
+            "graph_per_file_started",
+            f"Agent started for {file_ref.file_name}",
+            "per_file",
+            file_id=file_ref.file_id,
+            file_name=file_ref.file_name,
+            file_type=parsed.type,
+            segment_count=len(parsed.segments),
+        )
+        with node_span(f"per_file:{file_ref.file_id}", input={"type": parsed.type}):
+            try:
+                summary = agent.run(
+                    provider=provider,
+                    parsed=parsed,
+                    on_tool_call=on_tool_call,
+                    run_id=run_id,
+                    trace_name=f"per_file:{file_ref.file_id}",
+                    user_context=(
+                        run_context.user_context
+                        if (run_context and run_context.has_steering())
+                        else None
+                    ),
+                )
+            except LLMParseError as err:
+                logger.error(
+                    "graph.per_file.failed",
+                    file_id=file_ref.file_id,
+                    stage=err.stage,
+                    error=err.message,
+                )
+                emit(
+                    "graph_per_file_failed",
+                    f"Per-file agent failed for {file_ref.file_name}: parsed_json=False",
+                    "per_file",
+                    "error",
+                    file_id=file_ref.file_id,
+                    file_name=file_ref.file_name,
+                    stage=err.stage,
+                )
+                return {"errors": [ExtractionError(
+                    file_id=err.file_id or file_ref.file_id,
+                    stage=err.stage,
+                    message=err.message,
+                )]}
+        elapsed_ms = round((time.perf_counter() - file_started) * 1000)
+        logger.info(
+            "graph.per_file.completed",
+            file_id=file_ref.file_id,
+            workflow_count=len(summary.key_workflows),
+            pain_signal_count=len(summary.key_pain_signals),
+            lead_row_count=len(summary.lead_rows),
+            open_question_count=len(summary.open_questions),
             elapsed_ms=elapsed_ms,
         )
+        emit(
+            "graph_per_file_completed",
+            f"Agent completed {file_ref.file_name}",
+            "per_file",
+            file_id=file_ref.file_id,
+            file_name=file_ref.file_name,
+            workflow_count=len(summary.key_workflows),
+            pain_signal_count=len(summary.key_pain_signals),
+            lead_row_count=len(summary.lead_rows),
+            open_question_count=len(summary.open_questions),
+            elapsed_ms=elapsed_ms,
+        )
+        return {"file_summaries": {file_ref.file_id: summary}}
+
+    def per_file_join(state: DiagnosticState) -> dict:
+        """Fan-in marker after all per-file branches complete; emits the aggregate completed event."""
+        out = state.get("file_summaries", {}) or {}
+        logger.info("graph.node.completed", node="per_file_fanout", output_count=len(out))
         emit(
             "graph_node_completed",
             f"Per-file analysis completed for {len(out)} files",
             "per_file",
             node="per_file_fanout",
             output_count=len(out),
-            elapsed_ms=elapsed_ms,
         )
-        result: dict = {"file_summaries": out}
-        if new_errors:
-            result["errors"] = new_errors
-        return result
+        return {}
 
     def review_node(state: DiagnosticState) -> dict:
         """Run review_summaries over the per-file outputs and capture any revision requests."""
@@ -709,7 +695,9 @@ def build_graph(
 
     # --- Graph wiring ---
     g = StateGraph(DiagnosticState)
-    g.add_node("per_file_fanout", per_file_fanout)
+    g.add_node("per_file_setup", per_file_setup)
+    g.add_node("per_file_one", per_file_one)
+    g.add_node("per_file_join", per_file_join)
     g.add_node("review_summaries", review_node)
     g.add_node("redo_inc", redo_inc)
     g.add_node("synthesis", synthesis_node)
@@ -721,13 +709,15 @@ def build_graph(
     g.add_node("self_review_final", self_review_node)
     g.add_node("revise_inc", revise_inc)
 
-    g.set_entry_point("per_file_fanout")
-    g.add_edge("per_file_fanout", "review_summaries")
+    g.set_entry_point("per_file_setup")
+    g.add_conditional_edges("per_file_setup", dispatch_fanout, ["per_file_one"])
+    g.add_edge("per_file_one", "per_file_join")
+    g.add_edge("per_file_join", "review_summaries")
     g.add_conditional_edges(
         "review_summaries", redo_router,
         {"redo": "redo_inc", "advance": "synthesis"},
     )
-    g.add_edge("redo_inc", "per_file_fanout")
+    g.add_edge("redo_inc", "per_file_setup")
     g.add_edge("synthesis", "workflow_map")
     g.add_edge("workflow_map", "bottleneck_detect")
     g.add_edge("bottleneck_detect", "roi_score")

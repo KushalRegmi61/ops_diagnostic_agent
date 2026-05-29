@@ -57,7 +57,8 @@ def test_graph_compiles_and_exposes_all_nodes():
     compiled = build_graph(provider=_StubProvider(), parsed_files={})
     nodes = set(compiled.get_graph().nodes.keys())
     expected = {
-        "per_file_fanout", "review_summaries", "redo_inc",
+        "per_file_setup", "per_file_one", "per_file_join",
+        "review_summaries", "redo_inc",
         "synthesis", "workflow_map", "bottleneck_detect", "roi_score",
         "fastest_win_select", "solution_blueprint", "self_review_final",
         "revise_inc",
@@ -65,11 +66,22 @@ def test_graph_compiles_and_exposes_all_nodes():
     assert expected.issubset(nodes)
 
 
+def test_entry_is_per_file_setup_and_fans_out_to_per_file_one():
+    """Entry node is per_file_setup; per_file_one converges through per_file_join."""
+    compiled = build_graph(provider=_StubProvider(), parsed_files={})
+    g = compiled.get_graph()
+    nodes = set(g.nodes.keys())
+    assert {"per_file_setup", "per_file_one", "per_file_join"}.issubset(nodes)
+    edges = {(e.source, e.target) for e in g.edges}
+    assert ("per_file_one", "per_file_join") in edges
+    assert ("per_file_join", "review_summaries") in edges
+
+
 def test_parent_graph_passes_run_context_to_per_file_agents():
-    """per_file_fanout threads run and trace context into nested agents."""
+    """per_file_one threads run and trace context into nested agents."""
     source = inspect.getsource(graph_module.build_graph)
 
-    assert 'run_id=state["run_id"]' in source
+    assert "run_id=run_id" in source
     assert 'trace_name=f"per_file:{file_ref.file_id}"' in source
 
 
@@ -152,7 +164,7 @@ def test_per_file_fanout_threads_user_context_into_agent_run(monkeypatch):
 def test_build_graph_passes_run_context_into_synthesis_run(monkeypatch):
     """The synthesis_node closure forwards build_graph's run_context kwarg into synthesis.run."""
     from app.graph import build_graph, initial_state
-    from app.schemas import IntakeBundle, RunContext, SummaryReview
+    from app.schemas import FileRef, IntakeBundle, RunContext, SummaryReview
 
     seen: dict = {}
 
@@ -181,9 +193,17 @@ def test_build_graph_passes_run_context_into_synthesis_run(monkeypatch):
         model = "fake"
 
     ctx = RunContext(user_context="focus onboarding")
+    # One FileRef so the Send fan-out dispatches a branch that converges through
+    # per_file_join → review_summaries → synthesis. With parsed_files empty the
+    # branch rehydrates from blob_path, skips, and contributes no summary — but
+    # the path to synthesis is still exercised, which is all this test cares about.
+    refs = [FileRef(
+        file_id="f1", file_name="x.txt",
+        mime_type="text/plain", blob_path="/dev/null", parser_status="ok",
+    )]
     graph = build_graph(provider=FakeProvider(), parsed_files={}, run_context=ctx)
     try:
-        graph.invoke(initial_state("r_test", [], run_context=ctx),
+        graph.invoke(initial_state("r_test", refs, run_context=ctx),
                      config={"configurable": {"thread_id": "r_test"}})
     except Exception:
         pass  # We only care synthesis.run saw run_context
