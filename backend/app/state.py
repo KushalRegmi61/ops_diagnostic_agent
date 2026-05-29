@@ -26,13 +26,25 @@ from app.schemas import (
 )
 
 
+def merge_file_summaries(
+    left: dict[str, "FileSummary"] | None,
+    right: dict[str, "FileSummary"] | None,
+) -> dict[str, "FileSummary"]:
+    """Reducer for file_summaries across parallel per-file branches.
+
+    Each branch returns {file_id: summary}; later writes (right) win per
+    file_id so a redo pass overwrites the prior summary for the same file.
+    """
+    return {**(left or {}), **(right or {})}
+
+
 class DiagnosticState(TypedDict):
     """Shared state for the parent LangGraph workflow — one entry per pipeline output."""
 
     run_id: str
     files: list[FileRef]
     run_context: RunContext | None
-    file_summaries: dict[str, FileSummary]
+    file_summaries: Annotated[dict[str, FileSummary], merge_file_summaries]
     summary_review: SummaryReview | None
     redo_count: int
     bundle: IntakeBundle | None
