@@ -38,6 +38,18 @@ from app.structured_logging import get_logger
 logger = get_logger(__name__)
 
 
+def _compute_targets(state: DiagnosticState) -> tuple[set[str], str]:
+    """Return (targeted file_ids, reason).
+
+    On a redo pass (review has revision_requests) only the flagged files are
+    targeted; otherwise every file in the run is targeted.
+    """
+    review = state.get("summary_review")
+    if review and review.revision_requests:
+        return {r.file_id for r in review.revision_requests}, "revision_requests"
+    return {f.file_id for f in state["files"]}, "initial"
+
+
 def build_graph(
     *,
     provider: LLMProvider,
