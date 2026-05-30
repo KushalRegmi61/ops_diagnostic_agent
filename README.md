@@ -1,10 +1,26 @@
 # Ops Diagnostic Agent
 
-> Upload a folder of real operational artifacts. Get back a cited, executable automation blueprint.
+> **The hard part of agent integration isn't building the agent - it's figuring out which workflows are worth automating in the first place.** This tool does exactly that.
 
-A production-grade, AI-native operations diagnostic system. Ingests messy real-world ops files (PDFs, DOCXs, meeting transcripts, CSVs, MBOX exports, JSON dumps, XLSX workbooks), runs them through parallel per-file ReAct agents, synthesizes a cross-file picture, and produces a cited automation Blueprint via a deterministic 11-node LangGraph workflow with bounded redo and revision loops.
+Upload a client's messy ops artifacts - PDFs, meeting transcripts, CSVs, mailboxes, CRM/Salesforce exports - and get back a **cited, ROI-scored automation blueprint**. A discovery-phase accelerator for the work automation teams already sell: it surfaces the workflows worth automating, ranks them by ROI, picks the fastest win, and proves every claim against the source document. **Every citation is verified by code, not trusted from the model.**
 
-Every claim in the final Blueprint round-trips through a real parser and a real LLM. No mock providers. No fixture-canned outputs. Citations are enforced by code, not trust.
+---
+
+## What it does
+
+- **In** → a folder of unstructured operational files (10 formats: PDF, DOCX, VTT/SRT transcripts, CSV, XLSX, MBOX, JSON).
+- **Out** → a structured Blueprint: bottlenecks detected → opportunities ROI-scored → fastest win selected → automation steps, each cited to the exact span of the exact file.
+- **Guarantee** → every `Source` round-trips through a real parser. No hallucinated evidence, by construction.
+- **For** → automation agencies, AI-integration consultancies, and ops teams deciding *what* to automate **before** burning a sprint building it.
+
+## The problem it solves
+
+| | |
+|---|---|
+| **The real bottleneck** | Discovery, not build. Deciding *which* workflows to automate is the expensive, manual, judgment-heavy part - and it's what gets skipped. |
+| **The raw material** | Signal is buried across calls, exports, mailboxes, audits, workbooks - scattered, contradictory, impossible to triangulate by hand in a useful timeframe. |
+| **Why naive AI agents fail** | ① hallucinate citations ② swallow failures silently ③ break the moment they touch a real provider/DB/file ④ produce prose, not an executable artifact. |
+| **How this refuses all four** | ① code-enforced citation round-trip ② typed errors that never vanish ③ real systems only - no mocks ④ structured, ROI-scored Blueprint you can act on. |
 
 ---
 
@@ -16,125 +32,93 @@ Every claim in the final Blueprint round-trips through a real parser and a real 
 | Backend API + Swagger | https://ops-diagnostic-agent.onrender.com/docs |
 | Health probe | https://ops-diagnostic-agent.onrender.com/health |
 
-The backend is hosted on Render's free tier and cold-starts in roughly 30–60 seconds after idle. Give it one slow `/health` request before kicking off a run.
-
-A typical end-to-end run with 10 mixed-format files takes ~6–7 minutes on `gpt-4.1-mini` (parallel per-file ReAct + bounded redo + 8 lead nodes + bounded revision + deterministic citation round-trip).
+> Backend is on Render free tier - cold-starts in ~30–60 s after idle. Hit `/health` once before a run.
 
 ---
 
-## The problem this solves
+## How it works
 
-Operations teams sit on top of a mountain of unstructured artifacts (calls, exports, mailboxes, audit PDFs, sales workbooks) that contain *real* signal about where their business is bottlenecked. The signal is buried, scattered across formats, and impossible for a human to triangulate in a useful timeframe.
-
-Most "AI agents" that try to do this fall over for one of four reasons:
-
-1. They hallucinate citations that don't exist in the source.
-2. They drop silent failures into JSON and call it success.
-3. They wire the demo to mocks and break the moment they touch reality.
-4. They produce prose, not an actionable artifact you can execute against.
-
-This project is built specifically to refuse all four. It is structured around a single load-bearing invariant: **every `Source` in the output must round-trip through `parsers.excerpt(parsed, locator)` and return non-empty text**, enforced by a deterministic check before any LLM gets to "approve" the Blueprint.
-
----
-
-## Architecture
+### System Architecture
 
 ```mermaid
 flowchart LR
-  USER[Operator] --> UI[Next.js 15 Dashboard on Vercel]
-  UI -->|multipart upload| API[FastAPI on Render]
-  UI -->|WebSocket /api/runs/id/events| API
-  API --> BLOB[(Blob Store on disk)]
-  API --> SQL[(Neon Postgres — runs / files / payloads)]
-  API --> CKPT[(Redis Cloud — LangGraph checkpointer)]
+  USER[Operator] --> UI[Next.js 15 Dashboard · Vercel]
+  UI -->|multipart upload| API[FastAPI · Render]
+  UI -->|WebSocket events| API
+  API --> BLOB[(Blob Store)]
+  API --> SQL[(Neon Postgres)]
+  API --> CKPT[(Redis Cloud · checkpointer)]
   API --> LG[LangGraph Parent Workflow]
-  LG --> PARSE[Parsers — 10 file types]
-  LG --> PFA[Per-file ReAct agents in parallel]
-  LG --> LEAD[Lead chain — review → synthesize → diagnose → blueprint → self-review]
+  LG --> PARSE[Parsers · 10 file types]
+  LG --> PFA[Per-file ReAct agents · parallel Send fan-out]
+  LG --> LEAD[Lead chain · review→synthesize→diagnose→blueprint→self-review]
   PFA --> LLM[Provider Protocol]
   LEAD --> LLM
-  LLM --> OPENAI[OpenAI]
-  LLM --> OLLAMA[Ollama local]
-  LLM --> GROQ[Groq]
+  LLM --> OPENAI[OpenAI] & OLLAMA[Ollama] & GROQ[Groq]
   LG --> OBS[Langfuse v3 traces]
-  LEAD --> BP[Blueprint with deterministically-verified Sources]
+  LEAD --> BP[Blueprint · deterministically-verified Sources]
   BP --> SQL
 ```
 
-### The 11-node diagnostic chain
+**Pipeline at a glance:**
+- **Fan-out (map):** one ReAct agent per file runs in parallel via LangGraph `Send`, capped by `per_file_concurrency`; each extracts workflows / pain signals / leads with a BM25 toolbelt.
+- **Fan-in (reduce):** parallel branches merge through state reducers (dict-merge on summaries, `operator.add` on errors).
+- **Diagnose:** lead chain synthesizes a cross-file picture → maps workflows → detects bottlenecks → **ROI-scores opportunities** → selects the fastest win → writes the Blueprint.
+- **Self-correct:** two bounded loops - redo (≤1) re-runs only flagged files; revise (≤1) rewrites the Blueprint if citations/consistency fail.
+- **Verify:** the citation round-trip is re-checked deterministically before the Blueprint is accepted.
+
+### The 13-node diagnostic chain
 
 ```mermaid
 flowchart TD
-  A[per_file_fanout] --> B[review_summaries]
-  B -->|requests redo ≤1| C[redo_inc] --> A
+  S[per_file_setup] -->|Send × N files| O[per_file_one · parallel ReAct agents]
+  O --> J[per_file_join] --> B[review_summaries]
+  B -->|redo ≤1 · re-Send flagged files| C[redo_inc] --> S
   B -->|advance| D[synthesis] --> E[workflow_map] --> F[bottleneck_detect]
   F --> G[roi_score] --> H[fastest_win_select] --> I[solution_blueprint]
-  I --> J[self_review_final]
-  J -->|revise ≤1| K[revise_inc] --> I
-  J -->|approve| END[Persist Blueprint to Postgres]
+  I --> R[self_review_final]
+  R -->|revise ≤1| K[revise_inc] --> I
+  R -->|approve| PERSIST[Persist Blueprint to Postgres]
 ```
 
-Two bounded loops:
-- **Redo loop** at `review_summaries` (≤1 pass) — the lead agent can demand specific per-file agents re-run with targeted revision requests.
-- **Revision loop** at `self_review_final` (≤1 pass) — the final review agent can demand one rewrite of the Blueprint if the citation round-trip or internal consistency fails.
-
-Per-file agents are tool-routed ReAct loops over a fixed toolbelt: `search_text` (BM25), `read_segment`, `extract_workflow | pain_signal | lead_row`, `cite_locator`, `finalize_summary`. **`cite_locator` is the only path that mints a `Source`** — every citation has already round-tripped through a real parser before the loop is allowed to finalize.
+> **`cite_locator` is the only tool that mints a `Source`** - so every citation has already round-tripped through a real parser before a file summary can finalize.
 
 ---
 
-## What this demonstrates
+## Why you can trust the output
 
-For hiring managers reading this as a portfolio piece, here is exactly what this codebase is evidence of:
-
-| Capability | Where to look |
-|---|---|
-| Production LangGraph workflow with structured state | `backend/app/graph.py`, `backend/app/state.py` |
-| Per-file ReAct loop with tool routing and bounded iteration | `backend/app/agents/per_file/_react_loop.py`, `_tools/` |
-| Strict typed boundaries (Pydantic v2, TypedDict, Literal) | `backend/app/schemas.py` |
-| Provider abstraction across OpenAI / Ollama / Groq | `backend/app/llm/` |
-| Real persistence across Postgres, Redis, blob store | `backend/app/database.py`, `checkpointer.py`, `blob_store.py` |
-| Observability with Langfuse v3 + ContextVar trace propagation | `backend/app/observability.py` |
-| Resumable execution (state survives worker restart) | `per_file_fanout` re-parses from `FileRef.blob_path` |
-| Live WebSocket progress streaming | `backend/app/run_events.py`, `frontend/components/RunStream` |
-| Citation safety as a hard invariant | `backend/app/agents/lead/self_review_final.py` |
-| TDD discipline (182+ unit tests, real-service integration tests) | `backend/tests/` |
-| Real cloud deployment with idle-tx + free-tier-aware engineering | `app/database.py` (`pool_pre_ping`), `app/services/runs.py` |
+- **Citation invariant (enforced in code).** Every `Source` must round-trip through `parsers.excerpt(parsed, locator)` and return non-empty text - checked at the per-file tool *and* re-verified in `self_review_final`. No LLM self-certifies its evidence.
+- **No silent drops.** Unparseable model output raises `LLMParseError` → structured `ExtractionError` accumulated in state. Even error paths are covered by deterministic tests.
+- **Real systems only.** No mock LLM provider exists, by policy. Unit tests are deterministic + in-process; integration tests hit real Ollama / Redis Stack.
 
 ---
 
 ## Engineering highlights
 
-- **Citation invariant.** Every `Source` round-trips through a real parser. `self_review_final` enforces existence and reachability deterministically. The per-file `cite_locator` tool enforces it before any FileSummary finalizes. Locator union has 8 typed variants covering page ranges, segment indices, time ranges, email-message refs, and JSON-pointer-style addressing.
-- **No silent drops.** `LLMParseError` is raised whenever a provider returns `parsed_json=False`. Graph wrappers append a structured `ExtractionError` to `state.errors`. `DiagnosticState.errors` is annotated with `operator.add` so LangGraph accumulates errors automatically across parallel nodes.
-- **Resumable.** On worker restart, `per_file_fanout` re-parses files from disk rather than silently skipping (Redis-checkpointed state does not carry bulky `ParsedFile` segments — they rehydrate on demand).
-- **Bounded concurrency.** `POST /api/runs` dispatches via `asyncio.create_task` gated by an `asyncio.Semaphore(max_concurrent_runs)`. Tasks are tracked in a module-level set with a done-callback that marks `run.status='error'` on uncaught exceptions, so failed dispatches never lock a run in `running` forever.
-- **Upload safety.** `POST /api/files` rejects unknown MIME types (415), streams uploads in 1 MiB chunks against `max_upload_mb` (413), and sanitizes filenames against path traversal before any disk write.
-- **Production-aware DB pooling.** SQLAlchemy engine uses `pool_pre_ping=True` and `pool_recycle=300` on Postgres deployments — defense against Neon's idle-in-transaction timeout that kills connections after ~5 minutes (a real bug caught in production logs and fixed in commit `b08010e`).
-- **Cost-aware Redis TTL.** LangGraph checkpoint TTL is hard-capped at 10 minutes via a pydantic validator, so config drift cannot silently bloat retention beyond Redis Cloud's free-tier 30 MB cap.
-- **Real systems only.** No mock LLM provider exists in the codebase by policy. Integration tests gate on `_ollama_up()` / `redis_healthcheck()`. CI runs against a local Ollama with `temperature=0` for deterministic invariants.
+- **Parallel `Send` map-reduce** with reducer-merged state - bounded by `per_file_concurrency` so a 50-file upload can't open 50 provider connections.
+- **Strict typed boundaries** - Pydantic v2, `TypedDict` state, `Literal` enums, 8-variant typed locator union (page ranges → transcript timestamps → email refs → JSON-pointer).
+- **Resumable execution** - survives worker restart; `per_file_one` rehydrates parsed files from blob storage on demand (Redis checkpointer omits bulky segments).
+- **Bounded concurrency, two levels** - `asyncio.Semaphore` on run dispatch (with done-callbacks so a run never sticks in `running`) + LangGraph `max_concurrency` on the fan-out.
+- **Upload safety** - MIME allow-list (415), 1 MiB chunked streaming vs size cap (413), path-traversal-safe filenames.
+- **Production-hardened persistence** - `pool_pre_ping` + `pool_recycle` against Neon's idle-in-transaction timeout (a real bug, traced from prod logs and fixed).
+- **Distributed observability** - Langfuse v3 traces + structlog, trace context via `ContextVar`, no-op when keys unset.
+
+<details>
+<summary><b>Two debugging stories worth a look</b></summary>
+
+- **Idle-in-transaction crash.** A run finished all AI work, then lost the Blueprint on write - `start_run` held one Postgres transaction open across ~6 min of LLM work and Neon killed the idle session. Fix: commit right after marking the run `running`; add `pool_pre_ping`/`pool_recycle`. *Lesson: hold a transaction for the SQL, never for the AI.*
+- **A latent crash found by systematic debugging.** During the sequential→parallel migration, runs kept failing. Deterministic, LLM-free probes isolated *wiring* from *model variance* - proving the fan-out correct and tracing the fault to an error-path `emit()` that passed `stage` twice, so any parse error crashed the *error handler itself*. Fixed across 9 sites with regression tests, and empirically confirmed sync `invoke` honors `max_concurrency` (no async rewrite needed).
+</details>
 
 ---
 
 ## Tech stack
 
-**Backend**
-- Python 3.12 · FastAPI · SQLAlchemy 2.x · Pydantic v2
-- LangGraph + langgraph-checkpoint-redis (Redis Stack with RedisJSON + RediSearch)
-- LangChain provider clients for OpenAI, Ollama, Groq, generic OpenAI-compatible
-- Langfuse v3 for traces and prompt-level observability
-- psycopg v3 driver for Postgres, with auto-normalized DSN handling
+**Backend** - Python 3.12 · FastAPI · SQLAlchemy 2.x · Pydantic v2 · LangGraph (`Send` map-reduce, reducer-merged state) · langgraph-checkpoint-redis · LangChain (OpenAI / Ollama / Groq / OpenAI-compatible) · BM25 retrieval · Langfuse v3 · structlog · psycopg v3
 
-**Frontend**
-- Next.js 15.5 (App Router) · React 19 · TypeScript strict
-- Tailwind v4 · Lucide icons
-- Live WebSocket progress streaming on `/api/runs/{id}/events`
+**Frontend** - Next.js 15.5 (App Router) · React 19 · TypeScript (strict) · Tailwind v4 · live WebSocket progress
 
-**Infrastructure**
-- Frontend hosted on Vercel
-- Backend hosted on Render (free tier)
-- Postgres on Neon (free tier, pooled connection with `channel_binding=require`)
-- Redis Stack on Redis Cloud (free tier, 30 MB, RedisJSON + RediSearch modules pre-enabled)
-- Langfuse Cloud for tracing
+**Infra** - Vercel · Render · Neon Postgres · Redis Stack on Redis Cloud (RedisJSON + RediSearch) · Langfuse Cloud - every boundary env-driven via `pydantic-settings` (provider/DB/host swaps are config, not code)
 
 ---
 
@@ -143,86 +127,37 @@ For hiring managers reading this as a portfolio piece, here is exactly what this
 ```bash
 # Backend
 cd backend
-make install                    # uv venv + uv pip install -e ".[dev]"
-cp .env.example .env            # set LLM_PROVIDER and provider keys
-make test-unit                  # fast, in-process suite (182+ tests)
-make dev                        # uvicorn on :8000
+make install          # uv venv + uv pip install -e ".[dev]"
+cp .env.example .env   # set LLM_PROVIDER + provider keys
+make test-unit         # fast in-process suite (250+ tests)
+make dev               # uvicorn on :8000
 
-# Frontend (separate terminal)
-cd frontend
-npm install
-npm run dev                     # next on :3000
+# Frontend
+cd frontend && npm install && npm run dev   # next on :3000
 ```
 
-Required services for the integration suite and running real diagnostic chains:
-
-- **Ollama** with a chat-capable JSON-mode model pulled (`llama3.2:3b` or `llama3.1:8b`), OR an `OPENAI_API_KEY` in `.env`.
-- **Redis Stack** at `REDIS_URL` — plain `redis-server` will not work (the LangGraph checkpointer needs `JSON.SET` and `FT.SEARCH`).
-- **Postgres** (Neon or local) at `DATABASE_URL`, or omit to default to SQLite.
-- **Langfuse** keys are optional. Observability degrades to a no-op when unset.
+**Services for real runs / integration tests:** Ollama (`llama3.2:3b`/`llama3.1:8b`) **or** `OPENAI_API_KEY` · Redis **Stack** at `REDIS_URL` (plain `redis-server` won't work - needs `JSON.SET`/`FT.SEARCH`) · Postgres at `DATABASE_URL` (or omit → SQLite) · Langfuse keys optional.
 
 ---
 
-## Project layout
+## What this codebase demonstrates
 
-```
-ops_diagnostic_agent/
-├── backend/
-│   ├── app/
-│   │   ├── main.py                 FastAPI: /health, /api/files, /api/runs, /api/runs/{id}/events (WS)
-│   │   ├── config.py               @lru_cache get_settings() reading .env
-│   │   ├── database.py             SQLAlchemy engine with pool_pre_ping + URL normalizer
-│   │   ├── models.py               ORM tables: runs, files, file_summaries, intake_bundles, blueprints
-│   │   ├── schemas.py              Every typed boundary; 8-variant locator union; ExtractionError
-│   │   ├── state.py                DiagnosticState TypedDict with operator.add error accumulation
-│   │   ├── graph.py                11-node LangGraph; rehydrates parsed_files on resume
-│   │   ├── registry.py             Single source of truth for {file_type → per-file agent}
-│   │   ├── checkpointer.py         Redis Stack LangGraph checkpointer with TTL cap
-│   │   ├── observability.py        Langfuse v3 client + CallbackHandler factory
-│   │   ├── run_events.py           Thread-safe in-process WebSocket event hub
-│   │   ├── blob_store.py           Path-traversal-safe on-disk blob store
-│   │   ├── parsers/                10 file-type parsers + excerpt round-trip
-│   │   ├── agents/
-│   │   │   ├── lead/               8 single-shot LLM nodes
-│   │   │   └── per_file/           ReAct loop + 7 per-type wrappers via app.registry
-│   │   ├── llm/                    Provider Protocol + ollama / openai / groq / openai_compat
-│   │   └── services/               files.upload_file, runs.start_run, runs.get_blueprint
-│   └── tests/{unit,integration}/   182+ unit tests; integration tests gate on real services
-└── frontend/                       Next.js dashboard — upload, live progress, blueprint viewer
-```
-
----
-
-## Deployment topology
-
-```mermaid
-flowchart LR
-  USER[User Browser] --> CF[Vercel Edge]
-  CF --> NEXT[Next.js 15 App]
-  NEXT -->|HTTPS + WSS| RENDER[Render Web Service<br/>FastAPI + uvicorn]
-  RENDER --> NEON[(Neon Postgres<br/>us-east-1)]
-  RENDER --> RC[(Redis Cloud<br/>RedisJSON + RediSearch)]
-  RENDER --> OAI[OpenAI API]
-  RENDER --> LF[Langfuse Cloud<br/>traces]
-```
-
-Every external boundary is environment-driven via `pydantic-settings`. Switching providers (OpenAI → Ollama → Groq), DBs (Postgres → SQLite), or hosts is a configuration change, not a code change.
-
----
-
-## Roadmap
-
-- Containerize backend (Dockerfile + docker-compose for local Ollama + Redis Stack + Postgres).
-- Move blob store off the Render ephemeral filesystem (S3 or Cloudflare R2).
-- Add an `/api/runs/{id}/replay` endpoint that re-executes from a Redis checkpoint, for cheap debugging without re-burning LLM tokens.
-- First-class evaluation harness: golden runs with assertions on `bundle.workflows`, `blueprint.steps`, and citation reachability.
+| Capability | Where |
+|---|---|
+| Citation safety as a hard, code-enforced invariant | `app/agents/lead/self_review_final.py`, `cite_locator` tool |
+| Production LangGraph workflow + structured state | `app/graph.py`, `app/state.py` |
+| Parallel `Send` map-reduce with reducer-merged state | `app/graph.py` (`dispatch_fanout`, `per_file_one`, `per_file_join`), `app/state.py` |
+| Per-file ReAct loop with tool routing + bounded iteration | `app/agents/per_file/_react_loop.py`, `_tools/` |
+| Strict typed boundaries (Pydantic v2, TypedDict, Literal) | `app/schemas.py` |
+| Provider abstraction (OpenAI / Ollama / Groq) | `app/llm/` |
+| Real persistence (Postgres, Redis, blob store) | `app/database.py`, `checkpointer.py`, `blob_store.py` |
+| Resumable execution (survives worker restart) | `per_file_one` re-parses from `FileRef.blob_path` |
+| Observability (Langfuse v3 + ContextVar) | `app/observability.py` |
+| Production DB lifecycle fix (idle-in-transaction) | `app/database.py`, `app/services/runs.py` |
+| TDD discipline (250+ unit tests, real-service integration) | `backend/tests/` |
 
 ---
 
 ## Author
 
-Kushal Regmi
-
-- GitHub: https://github.com/KushalRegmi61
-- LinkedIn: https://www.linkedin.com/in/kushal-regmi-0b88a42aa
-- Email: kushalregmi432@gmail.com
+**Kushal Regmi** · [GitHub](https://github.com/KushalRegmi61) · [LinkedIn](https://www.linkedin.com/in/kushal-regmi-0b88a42aa) · kushalregmi432@gmail.com
