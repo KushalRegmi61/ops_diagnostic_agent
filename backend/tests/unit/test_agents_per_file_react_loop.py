@@ -307,3 +307,56 @@ def test_run_react_loop_budget_exhausted_without_findings_falls_back():
 
     assert summary.one_paragraph_summary.startswith("(partial")
     assert "finalize_summary" in summary.agent_notes  # non-empty fallback reason recorded (no silent drop)
+
+
+def test_run_react_loop_budget_exhausted_with_findings_force_finalizes():
+    """A model that extracts findings but never calls finalize_summary exits via the
+    budget guard's force-finalize path, producing a real (non-partial) summary."""
+    _source_dict = {
+        "file_id": "f1",
+        "file_name": "notes.md",
+        "type": "md",
+        "locator": {"type": "text", "line_start": 1, "line_end": 1},
+    }
+    provider = _FakeProvider(
+        responses=[
+            # Turn 1: extract a workflow — creates ≥1 finding in working state.
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "extract_workflow",
+                        "args": {
+                            "name": "Inbound lead intake",
+                            "actors": ["CSR"],
+                            "systems": ["CRM"],
+                            "steps": ["Lead arrives", "CSR follows up"],
+                            "manual_touchpoints": ["Manual CRM note copy"],
+                            "sources": [_source_dict],
+                        },
+                        "id": "call_1",
+                    }
+                ],
+            ),
+            # Turn 2: search (no finding) — cycling ensures extract never calls finalize.
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "search_text",
+                        "args": {"query": "response time"},
+                        "id": "call_2",
+                    }
+                ],
+            ),
+        ]
+    )
+
+    # iteration_cap=6, FINALIZE_GUARD=2: force-finalize triggers when steps_remaining <= 2
+    # (i.e. after iteration 4). The cycling [extract, search, extract, search, ...] never
+    # calls finalize_summary, so the budget guard fires with ≥1 finding → force_finalize.
+    summary = run_react_loop(provider=provider, parsed=_parsed(), iteration_cap=6)
+
+    assert summary.one_paragraph_summary.startswith("Captured ")
+    assert "(partial" not in summary.one_paragraph_summary
+    assert len(summary.key_workflows) >= 1
