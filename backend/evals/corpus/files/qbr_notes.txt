@@ -1,0 +1,3 @@
+QBR notes.
+Revenue leaks when renewals lapse without a reminder.
+Team re-keys the same data into three systems.

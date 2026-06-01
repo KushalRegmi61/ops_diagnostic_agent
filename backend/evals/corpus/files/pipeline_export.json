@@ -1,0 +1,16 @@
+{
+  "opportunities": [
+    {
+      "id": "o1",
+      "account": "Delta Co",
+      "owner": "unassigned",
+      "stalled_days": 21
+    },
+    {
+      "id": "o2",
+      "account": "Echo Ltd",
+      "owner": "J. Reyes",
+      "stalled_days": 2
+    }
+  ]
+}

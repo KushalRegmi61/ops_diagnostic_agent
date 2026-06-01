@@ -1,0 +1,4 @@
+name,email,stage,days_in_stage
+Acme Corp,ops@acme.com,awaiting_docs,12
+Beta LLC,hi@beta.com,new,1
+Gamma Inc,info@gamma.com,awaiting_docs,30

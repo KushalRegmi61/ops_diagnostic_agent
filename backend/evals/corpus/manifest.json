@@ -1,0 +1,164 @@
+[
+  {
+    "file": "intake_sop.pdf",
+    "type": "pdf",
+    "min_workflows": 1,
+    "min_pain_signals": 1,
+    "min_lead_rows": 0,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "renewal_sop.pdf",
+    "type": "pdf",
+    "min_workflows": 1,
+    "min_pain_signals": 0,
+    "min_lead_rows": 0,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "onboarding_sop.docx",
+    "type": "docx",
+    "min_workflows": 1,
+    "min_pain_signals": 0,
+    "min_lead_rows": 0,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "claims_handoff.docx",
+    "type": "docx",
+    "min_workflows": 1,
+    "min_pain_signals": 1,
+    "min_lead_rows": 0,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "producer_notes.md",
+    "type": "md",
+    "min_workflows": 0,
+    "min_pain_signals": 2,
+    "min_lead_rows": 0,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "standup_notes.md",
+    "type": "md",
+    "min_workflows": 0,
+    "min_pain_signals": 1,
+    "min_lead_rows": 0,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "discovery_call.txt",
+    "type": "txt",
+    "min_workflows": 0,
+    "min_pain_signals": 1,
+    "min_lead_rows": 0,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "qbr_notes.txt",
+    "type": "txt",
+    "min_workflows": 0,
+    "min_pain_signals": 1,
+    "min_lead_rows": 0,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "intake_call.vtt",
+    "type": "vtt",
+    "min_workflows": 0,
+    "min_pain_signals": 1,
+    "min_lead_rows": 0,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "renewal_call.srt",
+    "type": "srt",
+    "min_workflows": 0,
+    "min_pain_signals": 1,
+    "min_lead_rows": 0,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "leads_pipeline.csv",
+    "type": "csv",
+    "min_workflows": 0,
+    "min_pain_signals": 0,
+    "min_lead_rows": 1,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "renewals.csv",
+    "type": "csv",
+    "min_workflows": 0,
+    "min_pain_signals": 0,
+    "min_lead_rows": 1,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "leads_export.xlsx",
+    "type": "xlsx",
+    "min_workflows": 0,
+    "min_pain_signals": 0,
+    "min_lead_rows": 1,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "renewals_export.xlsx",
+    "type": "xlsx",
+    "min_workflows": 0,
+    "min_pain_signals": 0,
+    "min_lead_rows": 1,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "quote_requests.mbox",
+    "type": "mbox",
+    "min_workflows": 0,
+    "min_pain_signals": 1,
+    "min_lead_rows": 0,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "renewal_inbox.mbox",
+    "type": "mbox",
+    "min_workflows": 0,
+    "min_pain_signals": 1,
+    "min_lead_rows": 0,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "crm_contacts.json",
+    "type": "json",
+    "min_workflows": 0,
+    "min_pain_signals": 0,
+    "min_lead_rows": 1,
+    "min_citations": 1,
+    "must_converge": true
+  },
+  {
+    "file": "pipeline_export.json",
+    "type": "json",
+    "min_workflows": 0,
+    "min_pain_signals": 0,
+    "min_lead_rows": 1,
+    "min_citations": 1,
+    "must_converge": true
+  }
+]
