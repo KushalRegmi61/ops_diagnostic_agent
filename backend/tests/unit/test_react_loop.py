@@ -249,3 +249,13 @@ def test_route_after_update_budget_tight_zero_findings_routes_to_fallback():
     ws.iteration = 5            # steps_remaining == 1 <= FINALIZE_GUARD, no findings
     ai = _ai_tool_call("search_text", {"query": "q"})
     assert _route_after_update({"messages": [ai]}, ws) == "fallback"
+
+
+def test_brief_mentions_progress_state_and_one_tool_per_turn():
+    from app.prompts.per_file_brief import render_brief
+    brief = render_brief(
+        file_id="f1", file_name="x.txt", file_type="txt",
+        segment_count=2, iteration_cap=6,
+    )
+    assert "progress state" in brief.lower()
+    assert "one tool" in brief.lower()

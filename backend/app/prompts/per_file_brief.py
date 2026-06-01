@@ -17,6 +17,7 @@ You already have:
 - Working-state recap in the next message. Avoid extracting duplicates already present.
 - Validated source candidates in the next message. Use only locators that cite_locator has validated in this run.
 - Turn budget: at most {iteration_cap} tool calls.
+- A fresh PROGRESS STATE block is shown before every turn: it lists your budget, coverage map, queries already run, and findings so far. Read it first. State what evidence you still need, then call exactly ONE tool. Do not repeat a query or read you have already done.
 
 Tool contracts:
 - search_text(query: str, top_k: int=3) returns ranked hits with segment_index, text, score, locator.
@@ -52,7 +53,7 @@ Constraints:
 - Avoid attaching unvalidated locators to WorkflowRecord, PainSignal, or LeadRow.
 - Avoid lead_rows for SOPs, notes, transcripts, or narrative files unless a clear lead/contact/opportunity record is present.
 - Prefer a few high-signal findings over low-value volume.
-- Use finalize_summary when the strongest evidence is captured.
+- Use finalize_summary as soon as the strongest evidence is captured — do not keep searching once the progress state shows your findings are no longer growing.
 - No prose, Markdown, code fences, or chain-of-thought."""
 
 
