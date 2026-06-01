@@ -33,3 +33,13 @@ def test_make_plan_falls_back_to_default_on_failure():
 def test_plan_checklist_clamps_to_two_to_four_items():
     pc = PlanChecklist(items=["a", "b", "c", "d", "e", "f"])
     assert 2 <= len(pc.items) <= 4
+
+
+def test_plan_checklist_one_item_falls_back_to_full_default():
+    pc = PlanChecklist(items=["only one"])
+    assert pc.items == DEFAULT_PLAN
+
+
+def test_plan_checklist_truncates_to_first_four():
+    pc = PlanChecklist(items=["a", "b", "c", "d", "e"])
+    assert pc.items == ["a", "b", "c", "d"]

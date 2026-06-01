@@ -37,7 +37,7 @@ class PlanChecklist(BaseModel):
     def _clamp(cls, v: list[str]) -> list[str]:
         cleaned = [s.strip() for s in v if s and s.strip()]
         if len(cleaned) < 2:
-            cleaned = (cleaned + DEFAULT_PLAN)[:2]
+            return list(DEFAULT_PLAN)
         return cleaned[:4]
 
 
