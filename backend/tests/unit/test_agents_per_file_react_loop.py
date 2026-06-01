@@ -160,7 +160,7 @@ def test_run_react_loop_uses_langchain_agent_tools():
         provider=provider,
         parsed=_parsed(),
         prompt_suffix="Markdown notes.",
-        iteration_cap=2,
+        iteration_cap=6,
         on_tool_call=lambda name, args, result: tool_calls.append((name, args, result)),
     )
 
@@ -291,23 +291,19 @@ def test_run_react_loop_passes_file_metadata_to_langchain_config(monkeypatch):
     assert captured["extra_metadata"]["agent_kind"] == "per_file_langgraph"
 
 
-def test_run_react_loop_recursion_cap_falls_back(monkeypatch):
-    """AGENT_MAX_STEPS bounds only the LangGraph agent recursion."""
-    monkeypatch.setattr("app.agents.per_file._react_loop.DEFAULT_MAX_STEPS", 2)
+def test_run_react_loop_budget_exhausted_without_findings_falls_back():
+    """A model that only reads (no findings) and never finalizes exits via the budget
+    guard to a partial summary -- iteration_cap, not DEFAULT_MAX_STEPS, governs the loop."""
     provider = _FakeProvider(
         responses=[
             AIMessage(
                 content="",
                 tool_calls=[{"name": "read_segment", "args": {"segment_index": 0}, "id": "call_1"}],
             ),
-            AIMessage(
-                content="",
-                tool_calls=[{"name": "read_segment", "args": {"segment_index": 1}, "id": "call_2"}],
-            ),
         ]
     )
 
-    summary = run_react_loop(provider=provider, parsed=_parsed())
+    summary = run_react_loop(provider=provider, parsed=_parsed(), iteration_cap=3)
 
     assert summary.one_paragraph_summary.startswith("(partial")
-    assert "agent_max_steps=2 hit without finalize_summary" in summary.agent_notes
+    assert "finalize_summary" in summary.agent_notes  # non-empty fallback reason recorded (no silent drop)
