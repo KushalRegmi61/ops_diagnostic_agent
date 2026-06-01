@@ -87,3 +87,42 @@ def test_saturated_false_when_no_findings():
     ws.iteration = 4
     ws.findings_at_turn = [0, 0, 0, 0]
     assert saturated(ws, window=2) is False
+
+
+from app.agents.per_file._progress import render_state
+
+
+def _ws_for_render():
+    from app.agents.per_file._state import WorkingState
+    ws = WorkingState(file_id="f1", file_name="x.txt", total_segments=8, iteration_cap=6)
+    ws.iteration = 3
+    ws.segments_visited = [0, 2]
+    ws.queries_run = ["lead delay", "handoff"]
+    ws.coverage_frontier = 2
+    ws.plan = ["search workflows", "search pain", "cite+extract", "finalize"]
+    ws.findings_at_turn = [0, 1, 2, 2]
+    return ws
+
+
+def test_render_state_includes_budget_coverage_and_goal():
+    ws = _ws_for_render()
+    text = render_state(ws, file_type="txt")
+    assert "step 3/6" in text
+    assert "3 left" in text
+    assert "2/8" in text                       # coverage
+    assert "finalize_summary" in text          # goal restated every turn
+    assert "lead delay" in text or "handoff" in text
+
+
+def test_render_state_emits_budget_directive_when_tight():
+    ws = _ws_for_render()
+    ws.iteration = 5                            # steps_remaining == 1 <= FINALIZE_GUARD
+    text = render_state(ws, file_type="txt")
+    assert "Budget tight" in text
+
+
+def test_render_state_emits_stall_directive():
+    ws = _ws_for_render()
+    ws.stall_count = 2
+    text = render_state(ws, file_type="txt")
+    assert "Stalling" in text
