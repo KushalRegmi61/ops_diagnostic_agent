@@ -7,10 +7,10 @@ LangGraph loop's update/render nodes in ``_react_loop``.
 import json
 import os
 
+from app.agents.per_file._state import WorkingState
+
 _FINALIZE_GUARD = int(os.getenv("AGENT_FINALIZE_GUARD", "2"))
 _STALL_THRESHOLD = int(os.getenv("AGENT_STALL_THRESHOLD", "2"))
-
-from app.agents.per_file._state import WorkingState
 
 
 def total_findings(ws: WorkingState) -> int:

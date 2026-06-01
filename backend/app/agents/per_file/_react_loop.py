@@ -61,30 +61,6 @@ def _compact_json(value: Any, max_chars: int = 160) -> str:
     return _clip(text, max_chars=max_chars)
 
 
-def _state_recap(ws: WorkingState) -> str:
-    """Render a compact WorkingState snapshot for the next prompt."""
-    parts = [
-        f"iter={ws.iteration}",
-        f"workflows={len(ws.workflows)}",
-        f"pain_signals={len(ws.pain_signals)}",
-        f"lead_rows={len(ws.lead_rows)}",
-        f"open_questions={len(ws.open_questions)}",
-    ]
-    if ws.workflows:
-        names = ", ".join(_clip(wf.name, 40) for wf in ws.workflows[-3:])
-        parts.append(f"recent_workflows=[{names}]")
-    if ws.pain_signals:
-        signals = ", ".join(_clip(ps.text, 55) for ps in ws.pain_signals[-3:])
-        parts.append(f"recent_pain_signals=[{signals}]")
-    if ws.lead_rows:
-        rows = ", ".join(
-            _compact_json({kv.key: kv.value for kv in lr.normalized}, 70)
-            for lr in ws.lead_rows[-3:]
-        )
-        parts.append(f"recent_lead_rows=[{rows}]")
-    return " | ".join(parts)
-
-
 def _segment_index_recap(parsed: ParsedFile, max_segments: int = 12) -> str:
     """Show the model the segment table so it can pick indices for read_segment."""
     lines: list[str] = []
@@ -454,12 +430,6 @@ def _tool_calls(message: AIMessage) -> list[dict]:
     """Return tool calls from an AIMessage, tolerating provider-specific shapes."""
     calls = getattr(message, "tool_calls", None) or []
     return [call for call in calls if isinstance(call, dict)]
-
-
-def _final_summary_from_messages(messages: list[Any]) -> FileSummary | None:
-    """Extract the finalize_summary tool output from a LangChain agent transcript."""
-    summary, _ = _final_summary_or_error(messages)
-    return summary
 
 
 def _final_summary_or_error(messages: list[Any]) -> tuple[FileSummary | None, str | None]:

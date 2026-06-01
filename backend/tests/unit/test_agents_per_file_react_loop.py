@@ -7,12 +7,11 @@ from langchain_core.messages import AIMessage
 from app.agents.per_file._react_loop import (
     DEFAULT_MAX_STEPS,
     _segment_index_recap,
-    _state_recap,
     run_react_loop,
 )
 from app.agents.per_file._state import WorkingState
 from app.llm.base import LLMParseError
-from app.schemas import KVPair, LeadRow, ParsedFile, ParsedSegment, PainSignal, Source, WorkflowRecord
+from app.schemas import ParsedFile, ParsedSegment, Source
 
 
 def _parsed() -> ParsedFile:
@@ -51,40 +50,6 @@ def test_segment_index_recap_includes_locator_preview():
     assert "[0] locator=" in recap
     assert '"line_start": 1' in recap
     assert "Leads wait more than 24 hours" in recap
-
-
-def test_state_recap_includes_recent_finding_snippets():
-    """Working-state recap includes compact finding names to reduce duplicates."""
-    ws = WorkingState(file_id="f1", file_name="notes.md")
-    ws.iteration = 3
-    ws.workflows.append(
-        WorkflowRecord(
-            name="Inbound lead follow-up",
-            actors=["Producer"],
-            systems=["CRM"],
-            steps=["Lead arrives", "Producer follows up"],
-            manual_touchpoints=["Manual CRM note copy"],
-            sources=[_source()],
-        )
-    )
-    ws.pain_signals.append(
-        PainSignal(text="Leads wait more than 24 hours before response.", category="delay", sources=[_source()])
-    )
-    ws.lead_rows.append(
-        LeadRow(
-            raw=[KVPair(key="name", value="Acme Corp")],
-            normalized=[KVPair(key="company", value="Acme Corp")],
-            source=_source(),
-        )
-    )
-
-    recap = _state_recap(ws)
-
-    assert "iter=3" in recap
-    assert "recent_workflows=[Inbound lead follow-up]" in recap
-    assert "recent_pain_signals=[Leads wait more than 24 hours before response.]" in recap
-    assert "recent_lead_rows=[" in recap
-    assert "Acme Corp" in recap
 
 
 def test_default_max_steps_is_agent_only_default():
