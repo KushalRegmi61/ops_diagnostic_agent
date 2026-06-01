@@ -190,6 +190,17 @@ class FileSummary(BaseModel):
     agent_notes: str
 
 
+class AgentTurn(BaseModel):
+    """The model's per-turn self-direction, carried on every tool call.
+
+    Holds reasoning intent only — never locators or citations. Fields default to
+    empty so a tool call that omits them never crashes (variance-tolerant)."""
+
+    open_gap: str = ""           # what is still missing — the gap chased this turn
+    plan_next: str = ""          # the single next step and why
+    ready_to_finalize: bool = False  # advisory self-assessment of coverage
+
+
 # ---- Reviewer types ----
 
 class RevisionRequest(BaseModel):
