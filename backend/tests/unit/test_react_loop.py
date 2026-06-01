@@ -216,3 +216,28 @@ def test_force_finalize_builds_real_summary_from_findings():
     assert summary.one_paragraph_summary.strip() != ""
     assert summary.key_workflows == ws.workflows
     assert summary.key_pain_signals == ws.pain_signals
+
+
+def test_route_after_update_finalizes_on_finalize_summary_call():
+    from app.agents.per_file._react_loop import _route_after_update
+    ws = WorkingState(file_id="f1", file_name="x", iteration_cap=6)
+    ws.iteration = 1
+    ai = _ai_tool_call("finalize_summary", {"one_paragraph_summary": "done"})
+    assert _route_after_update({"messages": [ai]}, ws) == "finalize"
+
+
+def test_route_after_update_force_finalizes_when_budget_tight():
+    from app.agents.per_file._react_loop import _route_after_update
+    ws = WorkingState(file_id="f1", file_name="x", iteration_cap=6)
+    ws.iteration = 5                  # steps_remaining == 1 <= FINALIZE_GUARD
+    ws.workflows = ["wf"]             # has a finding to keep
+    ai = _ai_tool_call("search_text", {"query": "q"})
+    assert _route_after_update({"messages": [ai]}, ws) == "force_finalize"
+
+
+def test_route_after_update_continues_otherwise():
+    from app.agents.per_file._react_loop import _route_after_update
+    ws = WorkingState(file_id="f1", file_name="x", iteration_cap=6)
+    ws.iteration = 1
+    ai = _ai_tool_call("search_text", {"query": "q"})
+    assert _route_after_update({"messages": [ai]}, ws) == "render"

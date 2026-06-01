@@ -30,6 +30,9 @@ from app.structured_logging import get_logger
 
 logger = get_logger(__name__)
 DEFAULT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "12"))
+COMPACT_EVERY = int(os.getenv("AGENT_COMPACT_EVERY", "4"))       # sawtooth period (turns)
+FINALIZE_GUARD = int(os.getenv("AGENT_FINALIZE_GUARD", "2"))     # force-finalize when steps_remaining <= this
+SATURATION_WINDOW = int(os.getenv("AGENT_SATURATION_WINDOW", "2"))  # turns of zero finding-growth before saturation
 FILE_NAME_PATTERN = re.compile(r"([A-Za-z0-9][A-Za-z0-9_\- ]{0,200}\.[A-Za-z0-9]{1,8})")
 
 
@@ -112,7 +115,13 @@ def run_react_loop(
     FileSummary — recall is preserved at the per-file layer.
     """
     started = time.perf_counter()
-    ws = WorkingState(file_id=parsed.file_id, file_name=parsed.file_name)
+    ws = WorkingState(
+        file_id=parsed.file_id,
+        file_name=parsed.file_name,
+        total_segments=len(parsed.segments),
+        iteration_cap=iteration_cap,
+    )
+    ws.plan = make_plan(provider, parsed)
 
     brief = render_brief(
         file_id=parsed.file_id,
@@ -151,7 +160,7 @@ def run_react_loop(
         )
         return _partial_summary(ws, parsed, started, reason=reason)
 
-    graph = _build_per_file_graph(bound_model=bound_model, tools=tools, ws=ws)
+    graph = _build_per_file_graph(bound_model=bound_model, tools=tools, ws=ws, parsed=parsed)
     messages = _initial_messages(
         brief=brief,
         prompt_suffix=prompt_suffix,
@@ -177,7 +186,9 @@ def run_react_loop(
             "has_steering": run_context.has_steering() if run_context else False,
         },
     )
-    config["recursion_limit"] = DEFAULT_MAX_STEPS
+    # recursion_limit is now a pure backstop: each turn is ~4 super-steps, so allow
+    # iteration_cap turns with headroom. Budget is enforced by ws.iteration / force-finalize.
+    config["recursion_limit"] = iteration_cap * 4 + 8
 
     try:
         result = graph.invoke(
@@ -253,8 +264,6 @@ def _initial_messages(
     user = (
         "Segment index (locator previews and first text shown for picking read_segment indices):\n"
         + _segment_index_recap(parsed)
-        + f"\n\nCurrent working state: {_state_recap(ws)}"
-        + "\n\nValidated source candidates:\nNone yet. Call cite_locator before attaching any source."
     )
     return [SystemMessage(content=system), HumanMessage(content=user)]
 
@@ -328,28 +337,54 @@ def _update_stall(ws: WorkingState, last_ai: AIMessage | None) -> None:
     ws.last_signature = sig
 
 
-def _build_per_file_graph(*, bound_model: Any, tools: list[Any], ws: WorkingState):
-    """Build a compact LangGraph ReAct loop with explicit terminal routing."""
+def _build_per_file_graph(*, bound_model: Any, tools: list[Any], ws: WorkingState, parsed: ParsedFile):
+    """Build the converging loop: render -> agent -> tools -> update -> route."""
+
+    def render_node(state: _PerFileGraphState) -> dict:
+        """Inject a fresh ProgressState block as a HumanMessage before each turn."""
+        block = _progress.render_state(ws, file_type=parsed.type)
+        return {"messages": [HumanMessage(content=block)]}
 
     def agent_node(state: _PerFileGraphState, config: RunnableConfig) -> dict:
+        """Increment iteration counter and invoke the bound model."""
         ws.iteration += 1
         response = bound_model.invoke(state.get("messages", []), config=config)
         return {"messages": [response]}
 
+    def update_node(state: _PerFileGraphState) -> dict:
+        """Deterministically recompute ProgressState, detect stalls, compact transcript."""
+        messages = state.get("messages", [])
+        last_ai = _last_ai_message(messages)
+        _apply_tool_observations(ws, messages)
+        _update_stall(ws, last_ai)
+        ws.findings_at_turn.append(_progress.total_findings(ws))
+        removals: list[Any] = []
+        if COMPACT_EVERY > 0 and ws.iteration % COMPACT_EVERY == 0:
+            keep_tail = messages[-2:]
+            for m in messages:
+                if isinstance(m, SystemMessage) or m in keep_tail:
+                    continue
+                mid = getattr(m, "id", None)
+                if mid is not None:
+                    removals.append(RemoveMessage(id=mid))
+        return {"messages": removals}
+
     def finalize_node(state: _PerFileGraphState) -> dict:
+        """Extract and validate finalize_summary output, or raise LLMParseError."""
         summary, error = _final_summary_or_error(state.get("messages", []))
         if summary is not None:
             return {"final_summary": summary}
-        # finalize_summary output was invalid — equivalent to parsed_json=False; raise
-        # so the graph node wrapper can append an ExtractionError instead of silently
-        # producing a partial summary that looks like a successful extraction.
         raise LLMParseError(
-            stage="per_file_react",
-            file_id=ws.file_id,
+            stage="per_file_react", file_id=ws.file_id,
             message=error or "finalize_summary output was invalid",
         )
 
+    def force_finalize_node(state: _PerFileGraphState) -> dict:
+        """Saturation/budget guard fired -- synthesize a real summary from findings."""
+        return {"final_summary": _force_finalize_summary(ws)}
+
     def fallback_node(state: _PerFileGraphState) -> dict:
+        """Populate fallback_reason when the agent stopped without finalizing."""
         if state.get("fallback_reason"):
             return {}
         last_ai = _last_ai_message(state.get("messages", []))
@@ -360,14 +395,24 @@ def _build_per_file_graph(*, bound_model: Any, tools: list[Any], ws: WorkingStat
         return {"fallback_reason": "agent stopped before finalize_summary"}
 
     graph = StateGraph(_PerFileGraphState)
+    graph.add_node("render", render_node)
     graph.add_node("agent", agent_node)
     graph.add_node("tools", ToolNode(tools, handle_tool_errors=True))
+    graph.add_node("update", update_node)
     graph.add_node("finalize", finalize_node)
+    graph.add_node("force_finalize", force_finalize_node)
     graph.add_node("fallback", fallback_node)
-    graph.set_entry_point("agent")
+    graph.set_entry_point("render")
+    graph.add_edge("render", "agent")
     graph.add_conditional_edges("agent", _route_after_agent, {"tools": "tools", "fallback": "fallback"})
-    graph.add_conditional_edges("tools", _route_after_tools, {"agent": "agent", "finalize": "finalize"})
+    graph.add_edge("tools", "update")
+    graph.add_conditional_edges(
+        "update",
+        lambda state: _route_after_update(state, ws),
+        {"finalize": "finalize", "force_finalize": "force_finalize", "render": "render"},
+    )
     graph.add_edge("finalize", END)
+    graph.add_edge("force_finalize", END)
     graph.add_edge("fallback", END)
     return graph.compile()
 
@@ -380,14 +425,18 @@ def _route_after_agent(state: _PerFileGraphState) -> str:
     return "tools"
 
 
-def _route_after_tools(state: _PerFileGraphState) -> str:
-    """Finalize after a finalize_summary call; otherwise continue the tool loop."""
+def _route_after_update(state: _PerFileGraphState, ws: WorkingState) -> str:
+    """Terminal routing: explicit finalize, else force-finalize on budget/saturation, else continue."""
     last_ai = _last_ai_message(state.get("messages", []))
     if last_ai is not None:
         for call in _tool_calls(last_ai):
             if call.get("name") == "finalize_summary":
                 return "finalize"
-    return "agent"
+    if ws.steps_remaining <= FINALIZE_GUARD and _progress.total_findings(ws) >= 1:
+        return "force_finalize"
+    if _progress.saturated(ws, window=SATURATION_WINDOW):
+        return "force_finalize"
+    return "render"
 
 
 def _last_ai_message(messages: list[Any]) -> AIMessage | None:
