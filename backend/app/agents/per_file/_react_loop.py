@@ -485,3 +485,27 @@ def _partial_summary(
         elapsed_ms=round((time.perf_counter() - started) * 1000),
     )
     return summary
+
+
+def _force_finalize_summary(ws: WorkingState) -> FileSummary:
+    """Build a REAL FileSummary from accumulated findings without an LLM call.
+
+    Fired by the saturation/budget guard. Produces a genuine one-paragraph summary
+    (not the '(partial …)' fallback string) so a run that found anything always
+    returns a real summary.
+    """
+    paragraph = (
+        f"Captured {len(ws.workflows)} workflow(s), {len(ws.pain_signals)} pain signal(s), "
+        f"and {len(ws.lead_rows)} lead row(s) from {ws.file_name} across "
+        f"{len(set(ws.segments_visited))} inspected segment(s)."
+    )
+    return FileSummary(
+        file_id=ws.file_id,
+        file_name=ws.file_name,
+        one_paragraph_summary=paragraph,
+        key_workflows=ws.workflows,
+        key_pain_signals=ws.pain_signals,
+        lead_rows=ws.lead_rows,
+        open_questions=ws.open_questions,
+        agent_notes=(ws.notes + " | force-finalized on saturation/budget").strip(" |"),
+    )

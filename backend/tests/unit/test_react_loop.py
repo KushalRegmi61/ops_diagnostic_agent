@@ -195,3 +195,24 @@ def test_update_stall_increments_on_repeated_signature():
     assert ws.stall_count == 1          # repeat
     _update_stall(ws, _ai_tool_call("search_text", {"query": "different"}))
     assert ws.stall_count == 0          # reset on change
+
+
+def test_force_finalize_builds_real_summary_from_findings():
+    from app.agents.per_file._react_loop import _force_finalize_summary
+    from app.agents.per_file._state import WorkingState
+    from app.schemas import WorkflowRecord, PainSignal
+
+    ws = WorkingState(file_id="f1", file_name="x.txt")
+    ws.workflows = [
+        WorkflowRecord(name="wf-a", actors=[], systems=[], steps=[], manual_touchpoints=[], sources=[])
+    ]
+    ws.pain_signals = [
+        PainSignal(text="ps-a", category="delay", sources=[]),
+        PainSignal(text="ps-b", category="error", sources=[]),
+    ]
+    summary = _force_finalize_summary(ws)
+    assert summary.file_id == "f1"
+    assert "partial" not in summary.one_paragraph_summary.lower()
+    assert summary.one_paragraph_summary.strip() != ""
+    assert summary.key_workflows == ws.workflows
+    assert summary.key_pain_signals == ws.pain_signals
