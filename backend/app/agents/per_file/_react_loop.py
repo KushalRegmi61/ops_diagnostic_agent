@@ -196,12 +196,13 @@ def run_react_loop(
             config=config,
         )
     except GraphRecursionError:
-        reason = f"agent_max_steps={DEFAULT_MAX_STEPS} hit without finalize_summary"
+        reason = f"iteration_cap={iteration_cap} exhausted without finalize_summary (recursion backstop)"
         logger.warning(
             "agent.per_file.recursion_limit",
             file_id=parsed.file_id,
             file_type=parsed.type,
             agent_max_steps=DEFAULT_MAX_STEPS,
+            iteration_cap=iteration_cap,
             elapsed_ms=round((time.perf_counter() - started) * 1000),
         )
         return _partial_summary(ws, parsed, started, reason=reason)
@@ -241,7 +242,7 @@ def run_react_loop(
         ws,
         parsed,
         started,
-        reason=reason or f"agent_max_steps={DEFAULT_MAX_STEPS} hit without finalize_summary",
+        reason=reason or f"iteration_cap={iteration_cap} exhausted without finalize_summary",
     )
 
 
@@ -352,7 +353,7 @@ def _build_per_file_graph(*, bound_model: Any, tools: list[Any], ws: WorkingStat
         return {"messages": [response]}
 
     def update_node(state: _PerFileGraphState) -> dict:
-        """Deterministically recompute ProgressState, detect stalls, compact transcript."""
+        """Deterministically recompute ProgressState (coverage, stall signature, per-turn findings count) and compact the transcript on the sawtooth period."""
         messages = state.get("messages", [])
         last_ai = _last_ai_message(messages)
         _apply_tool_observations(ws, messages)
@@ -409,7 +410,8 @@ def _build_per_file_graph(*, bound_model: Any, tools: list[Any], ws: WorkingStat
     graph.add_conditional_edges(
         "update",
         lambda state: _route_after_update(state, ws),
-        {"finalize": "finalize", "force_finalize": "force_finalize", "render": "render"},
+        {"finalize": "finalize", "force_finalize": "force_finalize",
+         "render": "render", "fallback": "fallback"},
     )
     graph.add_edge("finalize", END)
     graph.add_edge("force_finalize", END)
@@ -426,14 +428,15 @@ def _route_after_agent(state: _PerFileGraphState) -> str:
 
 
 def _route_after_update(state: _PerFileGraphState, ws: WorkingState) -> str:
-    """Terminal routing: explicit finalize, else force-finalize on budget/saturation, else continue."""
+    """Terminal routing: explicit finalize, else (on budget/saturation) force-finalize
+    when findings exist or fall back cleanly when none, else continue."""
     last_ai = _last_ai_message(state.get("messages", []))
     if last_ai is not None:
         for call in _tool_calls(last_ai):
             if call.get("name") == "finalize_summary":
                 return "finalize"
-    if ws.steps_remaining <= FINALIZE_GUARD and _progress.total_findings(ws) >= 1:
-        return "force_finalize"
+    if ws.steps_remaining <= FINALIZE_GUARD:
+        return "force_finalize" if _progress.total_findings(ws) >= 1 else "fallback"
     if _progress.saturated(ws, window=SATURATION_WINDOW):
         return "force_finalize"
     return "render"

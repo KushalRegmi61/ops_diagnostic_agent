@@ -241,3 +241,11 @@ def test_route_after_update_continues_otherwise():
     ws.iteration = 1
     ai = _ai_tool_call("search_text", {"query": "q"})
     assert _route_after_update({"messages": [ai]}, ws) == "render"
+
+
+def test_route_after_update_budget_tight_zero_findings_routes_to_fallback():
+    from app.agents.per_file._react_loop import _route_after_update
+    ws = WorkingState(file_id="f1", file_name="x", iteration_cap=6)
+    ws.iteration = 5            # steps_remaining == 1 <= FINALIZE_GUARD, no findings
+    ai = _ai_tool_call("search_text", {"query": "q"})
+    assert _route_after_update({"messages": [ai]}, ws) == "fallback"
