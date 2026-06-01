@@ -10,13 +10,15 @@ import re
 import time
 from typing import Annotated, Any, TypedDict
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
+from app.agents.per_file import _progress
+from app.agents.per_file._plan import make_plan
 from app.agents.per_file._router import build_tools
 from app.agents.per_file._state import WorkingState
 from app.llm.base import LLMParseError, LLMProvider
@@ -255,6 +257,75 @@ def _initial_messages(
         + "\n\nValidated source candidates:\nNone yet. Call cite_locator before attaching any source."
     )
     return [SystemMessage(content=system), HumanMessage(content=user)]
+
+
+def _apply_tool_observations(ws: WorkingState, messages: list[Any]) -> None:
+    """Deterministically fold the latest tool call + its result into ProgressState.
+
+    Logs queries, records visited segment indices, and advances the coverage
+    frontier. No LLM; pure bookkeeping over observable tool I/O.
+    """
+    last_ai = _last_ai_message(messages)
+    if last_ai is None:
+        return
+    calls = _tool_calls(last_ai)
+    if not calls:
+        return
+    call = calls[-1]
+    name, args = call.get("name"), call.get("args") or {}
+
+    if name == "search_text":
+        q = str(args.get("query", "")).strip()
+        if q:
+            ws.queries_run.append(q)
+        result = _tool_result_for(messages, call.get("id"))
+        for idx in _segment_indices(result):
+            if idx not in ws.segments_visited:
+                ws.segments_visited.append(idx)
+            ws.coverage_frontier = max(ws.coverage_frontier, idx)
+    elif name == "read_segment":
+        idx = args.get("segment_index")
+        if isinstance(idx, int):
+            if idx not in ws.segments_visited:
+                ws.segments_visited.append(idx)
+            ws.coverage_frontier = max(ws.coverage_frontier, idx)
+
+
+def _tool_result_for(messages: list[Any], tool_call_id: str | None) -> Any:
+    """Return the parsed ToolMessage content matching a tool_call id."""
+    if tool_call_id is None:
+        return None
+    for m in reversed(messages):
+        if isinstance(m, ToolMessage) and m.tool_call_id == tool_call_id:
+            try:
+                return json.loads(m.content)
+            except Exception:
+                return m.content
+    return None
+
+
+def _segment_indices(result: Any) -> list[int]:
+    """Extract segment_index ints from a search_text result payload."""
+    out: list[int] = []
+    if isinstance(result, list):
+        for hit in result:
+            if isinstance(hit, dict) and isinstance(hit.get("segment_index"), int):
+                out.append(hit["segment_index"])
+    return out
+
+
+def _update_stall(ws: WorkingState, last_ai: AIMessage | None) -> None:
+    """Increment stall_count on a repeated (tool, args) signature; reset on change."""
+    calls = _tool_calls(last_ai) if last_ai is not None else []
+    if not calls:
+        return
+    call = calls[-1]
+    sig = _progress.signature(call.get("name", ""), call.get("args") or {})
+    if sig == ws.last_signature:
+        ws.stall_count += 1
+    else:
+        ws.stall_count = 0
+    ws.last_signature = sig
 
 
 def _build_per_file_graph(*, bound_model: Any, tools: list[Any], ws: WorkingState):

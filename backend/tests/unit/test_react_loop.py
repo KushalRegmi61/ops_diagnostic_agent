@@ -155,3 +155,43 @@ def test_docx_wrapper_without_user_context_passes_none_run_context(monkeypatch):
     docx_agent.run(provider=object(), parsed=parsed)
 
     assert captured.get("run_context") is None
+
+
+from langchain_core.messages import AIMessage, ToolMessage
+from app.agents.per_file._state import WorkingState
+
+
+def _ai_tool_call(name, args, tid="t1"):
+    return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": tid}])
+
+
+def test_apply_tool_observations_logs_query_and_segments():
+    from app.agents.per_file._react_loop import _apply_tool_observations
+    ws = WorkingState(file_id="f1", file_name="x", total_segments=10)
+    ai = _ai_tool_call("search_text", {"query": "lead delay", "top_k": 3})
+    tool = ToolMessage(content='[{"segment_index": 4}, {"segment_index": 1}]', name="search_text", tool_call_id="t1")
+    _apply_tool_observations(ws, [ai, tool])
+    assert "lead delay" in ws.queries_run
+    assert set(ws.segments_visited) == {1, 4}
+    assert ws.coverage_frontier == 4
+
+
+def test_apply_tool_observations_read_segment_marks_visited():
+    from app.agents.per_file._react_loop import _apply_tool_observations
+    ws = WorkingState(file_id="f1", file_name="x", total_segments=10)
+    ai = _ai_tool_call("read_segment", {"segment_index": 7})
+    tool = ToolMessage(content='{"text": "...", "locator": {}}', name="read_segment", tool_call_id="t1")
+    _apply_tool_observations(ws, [ai, tool])
+    assert 7 in ws.segments_visited
+
+
+def test_update_stall_increments_on_repeated_signature():
+    from app.agents.per_file._react_loop import _update_stall
+    ws = WorkingState(file_id="f1", file_name="x")
+    ai = _ai_tool_call("search_text", {"query": "same"})
+    _update_stall(ws, ai)
+    assert ws.stall_count == 0          # first occurrence
+    _update_stall(ws, _ai_tool_call("search_text", {"query": "same"}))
+    assert ws.stall_count == 1          # repeat
+    _update_stall(ws, _ai_tool_call("search_text", {"query": "different"}))
+    assert ws.stall_count == 0          # reset on change
