@@ -2,6 +2,13 @@
 
 Measures, does not gate: asserts the report is well-formed and prints the per-file
 funnel + structural probe + failure-stage so the diagnosis is captured in output.
+
+Funnel-count caveat: the funnel is captured via the ``on_tool_call`` seam, which
+replays the FINAL transcript once at run-end. The loop sawtooth-compacts every
+``AGENT_COMPACT_EVERY`` (default 4) turns, so on a compacted run the funnel COUNTS
+are tail-biased (reads/cites before the first compaction are dropped). The
+failure-STAGE labels stay robust either way; only magnitudes drift. For faithful
+counts, run with ``AGENT_COMPACT_EVERY=0``.
 """
 import pytest
 
