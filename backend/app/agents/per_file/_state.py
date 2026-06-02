@@ -7,7 +7,7 @@ loop maintains: coverage map, budget, query log, plan, and stall bookkeeping.
 """
 from dataclasses import dataclass, field
 
-from app.schemas import LeadRow, PainSignal, WorkflowRecord
+from app.schemas import AgentTurn, LeadRow, PainSignal, WorkflowRecord
 
 
 @dataclass
@@ -32,6 +32,10 @@ class WorkingState:
     last_signature: str | None = None
     stall_count: int = 0
     findings_at_turn: list[int] = field(default_factory=list)
+
+    # --- model-written layer (Increment #1.5) ---
+    last_turn: AgentTurn | None = None
+    turn_log: list[AgentTurn] = field(default_factory=list)
 
     @property
     def steps_remaining(self) -> int:
