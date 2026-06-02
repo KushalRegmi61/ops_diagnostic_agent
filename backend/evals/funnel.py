@@ -48,6 +48,21 @@ class FunnelCollector:
             f.extract_calls += 1
 
 
+def failure_stage(funnel: RunFunnel) -> str:
+    """Classify where extraction collapsed, deterministically from the funnel.
+
+    Returns one of: converges | retrieval_or_parser | cite_roundtrip_parser |
+    behavioral_steering.
+    """
+    if funnel.terminal_reason != "fallback" or funnel.extract_calls > 0:
+        return "converges"
+    if funnel.searches_issued > 0 and funnel.search_hits_returned == 0:
+        return "retrieval_or_parser"
+    if funnel.cite_calls > 0 and funnel.cite_round_trips == 0:
+        return "cite_roundtrip_parser"
+    return "behavioral_steering"
+
+
 def terminal_reason(summary: FileSummary) -> str:
     """Derive the loop's terminal path from the returned FileSummary shape.
 

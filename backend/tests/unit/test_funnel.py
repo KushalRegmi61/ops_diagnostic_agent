@@ -2,7 +2,7 @@
 
 import pytest
 
-from evals.funnel import FunnelCollector, terminal_reason
+from evals.funnel import FunnelCollector, RunFunnel, failure_stage, terminal_reason
 from app.schemas import FileSummary
 
 
@@ -50,3 +50,19 @@ def _summary(*, paragraph: str, notes: str = "") -> FileSummary:
 def test_terminal_reason_from_summary_shape(paragraph, notes, expected):
     """terminal_reason maps each summary fingerprint to its loop exit path."""
     assert terminal_reason(_summary(paragraph=paragraph, notes=notes)) == expected
+
+
+@pytest.mark.parametrize(
+    "funnel,expected",
+    [
+        (RunFunnel(terminal_reason="model_finalize"), "converges"),
+        (RunFunnel(terminal_reason="force_finalize", extract_calls=2), "converges"),
+        (RunFunnel(terminal_reason="fallback", searches_issued=6, search_hits_returned=0), "retrieval_or_parser"),
+        (RunFunnel(terminal_reason="fallback", searches_issued=3, search_hits_returned=9, cite_calls=2, cite_round_trips=0), "cite_roundtrip_parser"),
+        (RunFunnel(terminal_reason="fallback", searches_issued=3, search_hits_returned=9, cite_calls=2, cite_round_trips=2, extract_calls=0), "behavioral_steering"),
+        (RunFunnel(terminal_reason="fallback", searches_issued=0), "behavioral_steering"),
+    ],
+)
+def test_failure_stage_truth_table(funnel, expected):
+    """failure_stage localizes the collapse point from the funnel counts."""
+    assert failure_stage(funnel) == expected
