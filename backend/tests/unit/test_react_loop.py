@@ -261,11 +261,8 @@ def test_brief_mentions_progress_state_and_one_tool_per_turn():
     assert "one tool" in brief.lower()
 
 
-"""update_node folds the model's AgentTurn off the latest tool call into WorkingState."""
-from langchain_core.messages import AIMessage
-
+# update_node folds the model's AgentTurn off the latest tool call into WorkingState.
 from app.agents.per_file._react_loop import _capture_turn
-from app.agents.per_file._state import WorkingState
 
 
 def test_capture_turn_reads_reasoning_from_tool_call_args():
