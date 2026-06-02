@@ -325,3 +325,40 @@ def test_run_react_loop_budget_exhausted_with_findings_force_finalizes():
     assert summary.one_paragraph_summary.startswith("Captured ")
     assert "(partial" not in summary.one_paragraph_summary
     assert len(summary.key_workflows) >= 1
+
+
+def test_run_react_loop_captures_agent_turn_through_the_loop():
+    """A tool call carrying AgentTurn fields is captured into turn_log via the real graph."""
+    captured = {}
+
+    import app.agents.per_file._react_loop as loop_mod
+    real_capture = loop_mod._capture_turn
+
+    def spy(ws, last_ai):
+        real_capture(ws, last_ai)
+        captured["ws"] = ws
+
+    # The model emits search WITH reasoning, then finalize.
+    provider = _FakeProvider(responses=[
+        AIMessage(content="", tool_calls=[{
+            "name": "search_text",
+            "args": {"query": "leads", "open_gap": "no pain yet", "plan_next": "read seg 0", "ready_to_finalize": False},
+            "id": "c1",
+        }]),
+        AIMessage(content="", tool_calls=[{
+            "name": "finalize_summary",
+            "args": {"one_paragraph_summary": "Lead delays present.", "open_gap": "", "plan_next": "", "ready_to_finalize": True},
+            "id": "c2",
+        }]),
+    ])
+
+    orig = loop_mod._capture_turn
+    loop_mod._capture_turn = spy
+    try:
+        summary = run_react_loop(provider=provider, parsed=_parsed(), iteration_cap=6)
+    finally:
+        loop_mod._capture_turn = orig
+
+    assert summary.one_paragraph_summary == "Lead delays present."
+    assert captured["ws"].turn_log, "no turns captured"
+    assert captured["ws"].turn_log[0].open_gap == "no pain yet"
