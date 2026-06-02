@@ -20,6 +20,26 @@ from app.agents.per_file._tools.search_text import search_text
 from app.schemas import ParsedFile
 
 
+TURN_FIELDS = ("open_gap", "plan_next", "ready_to_finalize")
+
+
+class _TurnMixin(BaseModel):
+    """AgentTurn reasoning fields mixed into every tool's args (stripped before dispatch)."""
+    open_gap: str = ""
+    plan_next: str = ""
+    ready_to_finalize: bool = False
+
+
+def _strip_turn(fn):
+    """Wrap a tool func so AgentTurn reasoning fields are dropped before dispatch."""
+    def wrapped(**kwargs):
+        """Pop the turn fields then call the wrapped tool func with the remaining args."""
+        for f in TURN_FIELDS:
+            kwargs.pop(f, None)
+        return fn(**kwargs)
+    return wrapped
+
+
 ToolName = Literal[
     "search_text",
     "read_segment",
@@ -37,18 +57,18 @@ class ToolCall(BaseModel):
     args: dict
 
 
-class SearchTextArgs(BaseModel):
+class SearchTextArgs(_TurnMixin):
     """Arguments for searching over parsed file segments."""
     query: str
     top_k: int = 3
 
 
-class ReadSegmentArgs(BaseModel):
+class ReadSegmentArgs(_TurnMixin):
     """Arguments for reading one parsed segment by its zero-based index."""
     segment_index: int
 
 
-class ExtractWorkflowArgs(BaseModel):
+class ExtractWorkflowArgs(_TurnMixin):
     """Arguments for recording a workflow found in the file."""
     name: str
     actors: list[str]
@@ -58,26 +78,26 @@ class ExtractWorkflowArgs(BaseModel):
     sources: list[dict]
 
 
-class ExtractPainSignalArgs(BaseModel):
+class ExtractPainSignalArgs(_TurnMixin):
     """Arguments for recording a pain signal found in the file."""
     text: str
     category: Literal["delay", "error", "repetition", "handoff", "missing_data", "visibility_gap", "revenue_leak"]
     sources: list[dict]
 
 
-class ExtractLeadRowArgs(BaseModel):
+class ExtractLeadRowArgs(_TurnMixin):
     """Arguments for recording a structured lead row found in tabular/export data."""
     raw: dict
     normalized: dict
     source: dict
 
 
-class CiteLocatorArgs(BaseModel):
+class CiteLocatorArgs(_TurnMixin):
     """Arguments for validating that a locator round-trips to source text."""
     locator: dict
 
 
-class FinalizeSummaryArgs(BaseModel):
+class FinalizeSummaryArgs(_TurnMixin):
     """Arguments for producing the final per-file summary."""
     one_paragraph_summary: str
     open_questions: list[str] | None = None
@@ -126,19 +146,19 @@ def build_tools(parsed: ParsedFile, ws: WorkingState, *, agent_mode: bool = Fals
             name="search_text",
             description="Search parsed file segments and return ranked hits with segment_index and locator.",
             args_schema=SearchTextArgs,
-            func=lambda query, top_k=3: search_text(parsed, query=query, top_k=top_k),
+            func=_strip_turn(lambda query, top_k=3: search_text(parsed, query=query, top_k=top_k)),
         ),
         "read_segment": StructuredTool.from_function(
             name="read_segment",
             description="Read the full text and locator for one parsed segment by segment_index.",
             args_schema=ReadSegmentArgs,
-            func=lambda segment_index: read_segment(parsed, segment_index=segment_index),
+            func=_strip_turn(lambda segment_index: read_segment(parsed, segment_index=segment_index)),
         ),
         "extract_workflow": StructuredTool.from_function(
             name="extract_workflow",
             description="Append a workflow record to the per-file working state.",
             args_schema=ExtractWorkflowArgs,
-            func=lambda name, actors, systems, steps, manual_touchpoints, sources: extract_workflow(
+            func=_strip_turn(lambda name, actors, systems, steps, manual_touchpoints, sources: extract_workflow(
                 ws,
                 name=name,
                 actors=actors,
@@ -146,35 +166,35 @@ def build_tools(parsed: ParsedFile, ws: WorkingState, *, agent_mode: bool = Fals
                 steps=steps,
                 manual_touchpoints=manual_touchpoints,
                 sources=sources,
-            ),
+            )),
         ),
         "extract_pain_signal": StructuredTool.from_function(
             name="extract_pain_signal",
             description="Append an operational pain signal to the per-file working state.",
             args_schema=ExtractPainSignalArgs,
-            func=lambda text, category, sources: extract_pain_signal(
+            func=_strip_turn(lambda text, category, sources: extract_pain_signal(
                 ws, text=text, category=category, sources=sources,
-            ),
+            )),
         ),
         "extract_lead_row": StructuredTool.from_function(
             name="extract_lead_row",
             description="Append a structured lead row to the per-file working state.",
             args_schema=ExtractLeadRowArgs,
-            func=lambda raw, normalized, source: extract_lead_row(
+            func=_strip_turn(lambda raw, normalized, source: extract_lead_row(
                 ws, raw=raw, normalized=normalized, source=source,
-            ),
+            )),
         ),
         "cite_locator": StructuredTool.from_function(
             name="cite_locator",
             description="Validate that a locator can be resolved and return a reusable source object.",
             args_schema=CiteLocatorArgs,
-            func=lambda locator: _cite_locator_with_source(parsed, locator),
+            func=_strip_turn(lambda locator: _cite_locator_with_source(parsed, locator)),
         ),
         "finalize_summary": StructuredTool.from_function(
             name="finalize_summary",
             description="Finalize the per-file working state into a FileSummary and end the loop.",
             args_schema=FinalizeSummaryArgs,
-            func=_finalize,
+            func=_strip_turn(_finalize),
             return_direct=True,
         ),
     }
@@ -184,6 +204,7 @@ def dispatch(call: ToolCall, *, parsed: ParsedFile, ws: WorkingState) -> Any:
     """Route ``call`` to its tool implementation; raises ValueError on unknown tool names."""
     name = call.tool
     args = call.args
+    args = {k: v for k, v in args.items() if k not in TURN_FIELDS}
     if name == "read_segment":
         args = _read_segment_args(parsed, args)
 
