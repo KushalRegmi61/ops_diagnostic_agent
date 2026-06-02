@@ -206,6 +206,8 @@ def dispatch(call: ToolCall, *, parsed: ParsedFile, ws: WorkingState) -> Any:
     """Route ``call`` to its tool implementation, stripping AgentTurn reasoning fields first; raises ValueError on unknown tool names."""
     name = call.tool
     args = call.args
+    # Strip here too (not only in _strip_turn): this legacy direct-dispatch path
+    # bypasses the bound StructuredTool funcs, so it needs its own guard.
     args = {k: v for k, v in args.items() if k not in TURN_FIELDS}
     if name == "read_segment":
         args = _read_segment_args(parsed, args)
