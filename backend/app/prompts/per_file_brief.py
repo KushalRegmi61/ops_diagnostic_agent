@@ -18,6 +18,7 @@ You already have:
 - Validated source candidates in the next message. Use only locators that cite_locator has validated in this run.
 - Turn budget: at most {iteration_cap} tool calls.
 - A fresh PROGRESS STATE block is shown before every turn: it lists your budget, coverage map, queries already run, and findings so far. Read it first. State what evidence you still need, then call exactly ONE tool. Do not repeat a query or read you have already done.
+- On EVERY tool call also set three reasoning fields: open_gap (what evidence is still missing), plan_next (the single next step and why), and ready_to_finalize (true only when the strongest evidence is already captured). These record your progress; fill them honestly every turn.
 
 Tool contracts:
 - search_text(query: str, top_k: int=3) returns ranked hits with segment_index, text, score, locator.

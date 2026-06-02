@@ -61,3 +61,11 @@ def test_render_brief_includes_tools_examples_and_strict_json_rule():
     assert '{"tool":"finalize_summary"' in prompt
     assert 'Reply ONLY with JSON' in prompt
     assert "No prose, Markdown, code fences, or chain-of-thought" in prompt
+
+
+def test_brief_documents_agent_turn_fields():
+    """The brief instructs the model to fill the three reasoning fields every turn."""
+    brief = render_brief(file_id="f1", file_name="n.md", file_type="md", segment_count=3, iteration_cap=6)
+    assert "open_gap" in brief
+    assert "plan_next" in brief
+    assert "ready_to_finalize" in brief
