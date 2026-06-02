@@ -46,3 +46,15 @@ class FunnelCollector:
                 f.cite_round_trips += 1
         elif name in _EXTRACT_TOOLS:
             f.extract_calls += 1
+
+
+def terminal_reason(summary: FileSummary) -> str:
+    """Derive the loop's terminal path from the returned FileSummary shape.
+
+    Returns one of: fallback | force_finalize | model_finalize.
+    """
+    if summary.one_paragraph_summary.startswith("(partial"):
+        return "fallback"
+    if _FORCE_NOTE in (summary.agent_notes or ""):
+        return "force_finalize"
+    return "model_finalize"

@@ -1,6 +1,9 @@
 """Funnel counting, terminal-reason, and failure-stage classification for the diagnostic."""
 
-from evals.funnel import FunnelCollector
+import pytest
+
+from evals.funnel import FunnelCollector, terminal_reason
+from app.schemas import FileSummary
 
 
 def test_funnel_collector_counts_each_stage():
@@ -20,3 +23,30 @@ def test_funnel_collector_counts_each_stage():
     assert f.cite_round_trips == 1
     assert f.extract_calls == 1
     assert f.terminal_reason == "unknown"
+
+
+def _summary(*, paragraph: str, notes: str = "") -> FileSummary:
+    """Build a minimal FileSummary for terminal-reason tests."""
+    return FileSummary(
+        file_id="f1",
+        file_name="n.md",
+        one_paragraph_summary=paragraph,
+        key_workflows=[],
+        key_pain_signals=[],
+        lead_rows=[],
+        open_questions=[],
+        agent_notes=notes,
+    )
+
+
+@pytest.mark.parametrize(
+    "paragraph,notes,expected",
+    [
+        ("(partial — iteration cap reached)", "", "fallback"),
+        ("Captured 1 workflow(s) ...", "force-finalized on saturation/budget", "force_finalize"),
+        ("Lead response delays are present.", "", "model_finalize"),
+    ],
+)
+def test_terminal_reason_from_summary_shape(paragraph, notes, expected):
+    """terminal_reason maps each summary fingerprint to its loop exit path."""
+    assert terminal_reason(_summary(paragraph=paragraph, notes=notes)) == expected
