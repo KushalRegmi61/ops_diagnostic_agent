@@ -40,3 +40,35 @@ def test_scorecard_meets_increment1_floor():
     # non-converging cases across all three runs.
     assert card.convergence_rate >= 0.33
     assert card.citation_round_trip_rate >= 0.33
+
+
+def test_scorecard_holds_baseline_with_write_back():
+    """Ship-or-drop gate (Increment #1.5, spec §8).
+
+    With the AgentTurn write-back live (reasoning on every tool call, captured into
+    ProgressState, advisory ready_to_finalize routing, brief documenting the fields),
+    the agent must HOLD the pinned Increment #1 baseline — not regress it — and every
+    converged run must round-trip its citations.
+
+    DECISION: SHIP (recorded 2026-06-02, gpt-5.4-nano). Three write-back runs over the
+    18-file corpus:
+        run 1: convergence >= 0.33 (passed)
+        run 2: convergence=0.389 / citation=0.389 / floor=0.389
+        run 3: convergence=0.611 / citation=0.611 / floor=0.389
+    The distribution is shifted UP versus the Increment #1 baseline (runs 0.33/0.39/0.50,
+    floor 0.28-0.44): the write-back's low (0.389) matches the baseline mid and its high
+    (0.611) exceeds the baseline high (0.50). citation_round_trip tracks convergence 1:1
+    in every run — the write-back introduced ZERO new citation round-trip failures — and
+    the per-turn reasoning is legible (structured `agent.per_file.turn` log + turn_log
+    captured end-to-end, see test_run_react_loop_captures_agent_turn_through_the_loop).
+    The floor stays pinned at the Increment #1 baseline (0.33) as a stable
+    catastrophic-regression gate rather than a flaky high-water mark; #2/#3 must raise it.
+    """
+    get_provider.cache_clear()
+    card = run_scorecard(get_provider())
+    print("\nSCORECARD (write-back):", card.model_dump_json(indent=2))
+    assert card.convergence_rate >= 0.33
+    assert card.citation_round_trip_rate >= 0.33
+    # Convergence and citation round-trip must move together: no converged summary may
+    # carry an unresolvable citation (the citation invariant, measured in aggregate).
+    assert card.citation_round_trip_rate >= card.convergence_rate - 1e-9
