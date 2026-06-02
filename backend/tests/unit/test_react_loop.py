@@ -259,3 +259,38 @@ def test_brief_mentions_progress_state_and_one_tool_per_turn():
     )
     assert "progress state" in brief.lower()
     assert "one tool" in brief.lower()
+
+
+"""update_node folds the model's AgentTurn off the latest tool call into WorkingState."""
+from langchain_core.messages import AIMessage
+
+from app.agents.per_file._react_loop import _capture_turn
+from app.agents.per_file._state import WorkingState
+
+
+def test_capture_turn_reads_reasoning_from_tool_call_args():
+    ws = WorkingState(file_id="f1", file_name="n.md")
+    ai = AIMessage(content="", tool_calls=[{
+        "name": "search_text",
+        "args": {"query": "leads", "open_gap": "no workflows yet", "plan_next": "search handoffs", "ready_to_finalize": False},
+        "id": "c1",
+    }])
+    _capture_turn(ws, ai)
+    assert ws.last_turn is not None
+    assert ws.last_turn.open_gap == "no workflows yet"
+    assert ws.turn_log[-1].plan_next == "search handoffs"
+
+
+def test_capture_turn_tolerates_missing_fields():
+    ws = WorkingState(file_id="f1", file_name="n.md")
+    ai = AIMessage(content="", tool_calls=[{"name": "read_segment", "args": {"segment_index": 0}, "id": "c1"}])
+    _capture_turn(ws, ai)
+    assert ws.last_turn is not None
+    assert ws.last_turn.open_gap == ""  # tolerant default, recorded (no silent drop)
+
+
+def test_capture_turn_noop_without_tool_calls():
+    ws = WorkingState(file_id="f1", file_name="n.md")
+    _capture_turn(ws, AIMessage(content="done"))
+    assert ws.last_turn is None
+    assert ws.turn_log == []

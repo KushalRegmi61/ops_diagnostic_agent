@@ -24,7 +24,7 @@ from app.agents.per_file._state import WorkingState
 from app.llm.base import LLMParseError, LLMProvider
 from app.observability import langchain_config
 from app.prompts.per_file_brief import render_brief
-from app.schemas import FileSummary, ParsedFile, RunContext
+from app.schemas import AgentTurn, FileSummary, ParsedFile, RunContext
 from app.structured_logging import get_logger
 
 
@@ -314,6 +314,35 @@ def _update_stall(ws: WorkingState, last_ai: AIMessage | None) -> None:
     ws.last_signature = sig
 
 
+def _capture_turn(ws: WorkingState, last_ai: AIMessage | None) -> None:
+    """Fold the model's per-turn reasoning (AgentTurn) off the latest tool call.
+
+    Reads the three flat fields from the tool-call args, records them into
+    ``last_turn``/``turn_log``, and emits one structured log line per turn so the
+    reasoning is observable in traces. Tolerant: missing fields default to empty.
+    """
+    calls = _tool_calls(last_ai) if last_ai is not None else []
+    if not calls:
+        return
+    args = calls[-1].get("args") or {}
+    turn = AgentTurn(
+        open_gap=str(args.get("open_gap", "")),
+        plan_next=str(args.get("plan_next", "")),
+        ready_to_finalize=bool(args.get("ready_to_finalize", False)),
+    )
+    ws.last_turn = turn
+    ws.turn_log.append(turn)
+    logger.info(
+        "agent.per_file.turn",
+        file_id=ws.file_id,
+        iteration=ws.iteration,
+        tool=calls[-1].get("name"),
+        open_gap=_clip(turn.open_gap, 120),
+        plan_next=_clip(turn.plan_next, 120),
+        ready_to_finalize=turn.ready_to_finalize,
+    )
+
+
 def _build_per_file_graph(*, bound_model: Any, tools: list[Any], ws: WorkingState, parsed: ParsedFile):
     """Build the converging loop: render -> agent -> tools -> update -> route."""
 
@@ -334,6 +363,7 @@ def _build_per_file_graph(*, bound_model: Any, tools: list[Any], ws: WorkingStat
         last_ai = _last_ai_message(messages)
         _apply_tool_observations(ws, messages)
         _update_stall(ws, last_ai)
+        _capture_turn(ws, last_ai)
         ws.findings_at_turn.append(_progress.total_findings(ws))
         removals: list[Any] = []
         if COMPACT_EVERY > 0 and ws.iteration % COMPACT_EVERY == 0:
