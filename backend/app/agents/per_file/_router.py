@@ -4,7 +4,7 @@ Parses the LLM's ``{tool, args}`` reply into a ToolCall and routes it to the
 matching function under ``_tools/``. Unknown tool names raise so the loop can
 log the failure and continue rather than silently dropping the call.
 """
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel
@@ -24,13 +24,15 @@ TURN_FIELDS = ("open_gap", "plan_next", "ready_to_finalize")
 
 
 class _TurnMixin(BaseModel):
-    """AgentTurn reasoning fields mixed into every tool's args (stripped before dispatch)."""
+    """AgentTurn reasoning fields mixed into every tool's args (stripped before dispatch).
+
+    Mirrors ``app.schemas.AgentTurn``; kept in sync via ``TURN_FIELDS``."""
     open_gap: str = ""
     plan_next: str = ""
     ready_to_finalize: bool = False
 
 
-def _strip_turn(fn):
+def _strip_turn(fn: Callable[..., Any]) -> Callable[..., Any]:
     """Wrap a tool func so AgentTurn reasoning fields are dropped before dispatch."""
     def wrapped(**kwargs):
         """Pop the turn fields then call the wrapped tool func with the remaining args."""
@@ -201,7 +203,7 @@ def build_tools(parsed: ParsedFile, ws: WorkingState, *, agent_mode: bool = Fals
 
 
 def dispatch(call: ToolCall, *, parsed: ParsedFile, ws: WorkingState) -> Any:
-    """Route ``call`` to its tool implementation; raises ValueError on unknown tool names."""
+    """Route ``call`` to its tool implementation, stripping AgentTurn reasoning fields first; raises ValueError on unknown tool names."""
     name = call.tool
     args = call.args
     args = {k: v for k, v in args.items() if k not in TURN_FIELDS}
