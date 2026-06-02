@@ -68,7 +68,8 @@ def _clip(value: str, n: int = 55) -> str:
 
 def render_state(ws: WorkingState, *, file_type: str) -> str:
     """Render the compact, labeled, plain-text working-memory block injected every
-    turn. Plain text (not JSON) and bounded in size regardless of run length.
+    turn, including the model's current gap and next-step reasoning from last_turn.
+    Plain text (not JSON) and bounded in size regardless of run length.
     """
     gaps = coverage_gaps(ws.segments_visited, ws.total_segments)[:3]
     plan_lines = "\n".join(
@@ -76,6 +77,12 @@ def render_state(ws: WorkingState, *, file_type: str) -> str:
     ) or "  (no plan)"
     recent_wf = ", ".join(_clip(getattr(w, "name", str(w)), 40) for w in ws.workflows[-3:])
     recent_ps = ", ".join(_clip(getattr(p, "text", str(p)), 40) for p in ws.pain_signals[-3:])
+
+    last = ws.last_turn
+    reasoning = (
+        f"Last turn — gap: {_clip(last.open_gap, 70)} | next: {_clip(last.plan_next, 70)}\n"
+        if last and (last.open_gap or last.plan_next) else ""
+    )
 
     directives: list[str] = []
     if ws.steps_remaining <= _FINALIZE_GUARD:
@@ -96,6 +103,7 @@ def render_state(ws: WorkingState, *, file_type: str) -> str:
         f"Unvisited ranges: {gaps}\n"
         f"Queries run: {ws.queries_run[-5:]}\n"
         f"Findings: workflows={len(ws.workflows)} (recent: {recent_wf}) | "
-        f"pain={len(ws.pain_signals)} (recent: {recent_ps}) | leads={len(ws.lead_rows)}\n\n"
+        f"pain={len(ws.pain_signals)} (recent: {recent_ps}) | leads={len(ws.lead_rows)}\n"
+        + reasoning + "\n"
         "=== DIRECTIVE ===\n" + "\n".join(directives)
     )

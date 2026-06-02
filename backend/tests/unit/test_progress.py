@@ -126,3 +126,18 @@ def test_render_state_emits_stall_directive():
     ws.stall_count = 2
     text = render_state(ws, file_type="txt")
     assert "Stalling" in text
+
+
+def test_render_state_includes_last_turn_reasoning():
+    from app.schemas import AgentTurn
+    ws = _ws_for_render()
+    ws.last_turn = AgentTurn(open_gap="owner unclear", plan_next="read segment 2")
+    block = render_state(ws, file_type="txt")
+    assert "owner unclear" in block
+    assert "read segment 2" in block
+
+
+def test_render_state_without_last_turn_is_unchanged_shape():
+    ws = _ws_for_render()
+    block = render_state(ws, file_type="txt")
+    assert "=== PROGRESS" in block  # still renders cleanly with no last_turn
