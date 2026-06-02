@@ -441,6 +441,10 @@ def _route_after_update(state: _PerFileGraphState, ws: WorkingState) -> str:
         for call in _tool_calls(last_ai):
             if call.get("name") == "finalize_summary":
                 return "finalize"
+    # Advisory: the model says it is ready and has captured at least one finding.
+    # This can finalize EARLIER than the budget but never overrides the backstop.
+    if ws.last_turn is not None and ws.last_turn.ready_to_finalize and _progress.total_findings(ws) >= 1:
+        return "force_finalize"
     if ws.steps_remaining <= FINALIZE_GUARD:
         return "force_finalize" if _progress.total_findings(ws) >= 1 else "fallback"
     if _progress.saturated(ws, window=SATURATION_WINDOW):

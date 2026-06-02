@@ -291,3 +291,40 @@ def test_capture_turn_noop_without_tool_calls():
     _capture_turn(ws, AIMessage(content="done"))
     assert ws.last_turn is None
     assert ws.turn_log == []
+
+
+def _ws_with_one_finding(cap=6, it=1) -> WorkingState:
+    from app.schemas import PainSignal, Source
+    ws = WorkingState(file_id="f1", file_name="n.md", total_segments=5, iteration_cap=cap)
+    ws.iteration = it
+    src = Source(file_id="f1", file_name="n.md", type="md", locator={"type": "text", "line_start": 1, "line_end": 1})
+    ws.pain_signals.append(PainSignal(text="delay", category="delay", sources=[src]))
+    return ws
+
+
+def _state_with_search_call() -> dict:
+    return {"messages": [AIMessage(content="", tool_calls=[{"name": "search_text", "args": {"query": "x"}, "id": "c1"}])]}
+
+
+def test_advisory_finalize_when_ready_and_has_finding():
+    from app.agents.per_file._react_loop import _route_after_update
+    from app.schemas import AgentTurn
+    ws = _ws_with_one_finding()
+    ws.last_turn = AgentTurn(ready_to_finalize=True)
+    assert _route_after_update(_state_with_search_call(), ws) == "force_finalize"
+
+
+def test_no_advisory_finalize_when_ready_but_no_findings():
+    from app.agents.per_file._react_loop import _route_after_update
+    from app.schemas import AgentTurn
+    ws = WorkingState(file_id="f1", file_name="n.md", total_segments=5, iteration_cap=6)
+    ws.iteration = 1
+    ws.last_turn = AgentTurn(ready_to_finalize=True)
+    assert _route_after_update(_state_with_search_call(), ws) == "render"
+
+
+def test_explicit_finalize_still_wins():
+    from app.agents.per_file._react_loop import _route_after_update
+    ws = _ws_with_one_finding()
+    state = {"messages": [AIMessage(content="", tool_calls=[{"name": "finalize_summary", "args": {"one_paragraph_summary": "done"}, "id": "c1"}])]}
+    assert _route_after_update(state, ws) == "finalize"
