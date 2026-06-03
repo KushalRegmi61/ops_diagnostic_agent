@@ -69,6 +69,7 @@ def test_steering_lifts_non_json_behavioral_failures():
     non-JSON files still cite-without-extract; the strict zero-offenders bar is met only
     once the #2c deeper fix lands.
     """
+    get_provider.cache_clear()
     report = run_diagnostics(get_provider())
 
     converged = sum(1 for d in report.diagnostics if d.failure_stage == "converges")

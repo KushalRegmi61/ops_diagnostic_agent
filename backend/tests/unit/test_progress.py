@@ -154,7 +154,7 @@ def test_render_state_emits_extract_directive_when_pending_citations():
     text = render_state(ws, file_type="txt")
     assert "extract_workflow" in text
     assert "not a finding" in text
-    assert "1" in text  # names the count
+    assert "1 citation(s)" in text  # names the count, not an incidental digit
 
 
 def test_render_state_no_extract_directive_when_no_pending_citations():
