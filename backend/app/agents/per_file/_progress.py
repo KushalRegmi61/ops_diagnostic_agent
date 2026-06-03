@@ -70,6 +70,9 @@ def render_state(ws: WorkingState, *, file_type: str) -> str:
     """Render the compact, labeled, plain-text working-memory block injected every
     turn, including the model's current gap and next-step reasoning from last_turn.
     Plain text (not JSON) and bounded in size regardless of run length.
+
+    Directives (in priority order): pending-citation nudge (when citations exist but
+    no extract_* was called), budget warning, stall warning, always-on one-tool rule.
     """
     gaps = coverage_gaps(ws.segments_visited, ws.total_segments)[:3]
     plan_lines = "\n".join(
@@ -85,6 +88,12 @@ def render_state(ws: WorkingState, *, file_type: str) -> str:
     )
 
     directives: list[str] = []
+    if ws.pending_citations > 0:
+        directives.append(
+            f"You validated {ws.pending_citations} citation(s) but saved 0 new finding(s) "
+            "from them. A valid citation is not a finding — call extract_workflow / "
+            "extract_pain_signal / extract_lead_row NOW with that source to commit it."
+        )
     if ws.steps_remaining <= _FINALIZE_GUARD:
         directives.append("Budget tight — finalize now with current findings.")
     if ws.stall_count >= _STALL_THRESHOLD:

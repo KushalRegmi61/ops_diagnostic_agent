@@ -146,3 +146,19 @@ def test_render_state_without_last_turn_is_unchanged_shape():
     ws = _ws_for_render()
     block = render_state(ws, file_type="txt")
     assert "=== PROGRESS" in block  # still renders cleanly with no last_turn
+
+
+def test_render_state_emits_extract_directive_when_pending_citations():
+    ws = _ws_for_render()
+    ws.pending_citations = 1
+    text = render_state(ws, file_type="txt")
+    assert "extract_workflow" in text
+    assert "not a finding" in text
+    assert "1" in text  # names the count
+
+
+def test_render_state_no_extract_directive_when_no_pending_citations():
+    ws = _ws_for_render()
+    ws.pending_citations = 0
+    text = render_state(ws, file_type="txt")
+    assert "not a finding" not in text
