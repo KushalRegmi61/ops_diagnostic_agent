@@ -15,6 +15,11 @@ def test_progress_state_has_working_memory_fields_with_defaults():
     assert ws.findings_at_turn == []
 
 
+def test_progress_state_pending_citations_defaults_to_zero():
+    ws = WorkingState(file_id="f1", file_name="x.txt", total_segments=10, iteration_cap=6)
+    assert ws.pending_citations == 0
+
+
 def test_steps_remaining_is_cap_minus_iteration_floored_at_zero():
     ws = WorkingState(file_id="f1", file_name="x.txt", iteration_cap=6)
     ws.iteration = 2

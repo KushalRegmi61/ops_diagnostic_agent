@@ -37,6 +37,9 @@ class WorkingState:
     last_turn: AgentTurn | None = None
     turn_log: list[AgentTurn] = field(default_factory=list)
 
+    # --- cite->extract steering (Increment #2b) ---
+    pending_citations: int = 0
+
     @property
     def steps_remaining(self) -> int:
         """Turns left before force-finalize; floored at zero."""
