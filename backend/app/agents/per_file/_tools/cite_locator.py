@@ -31,12 +31,24 @@ _EXCERPT_BY_TYPE = {
 
 
 def cite_locator(parsed: ParsedFile, *, locator: dict) -> dict:
-    """Return ``{text, valid}`` after round-tripping ``locator`` through the parser."""
+    """Return ``{text, valid}`` after round-tripping ``locator`` through the parser.
+
+    On the valid path also adds a ``next_step`` hint urging the model to
+    immediately call ``extract_workflow`` / ``extract_pain_signal`` /
+    ``extract_lead_row`` to commit the finding rather than stalling after cite.
+    """
     module = _EXCERPT_BY_TYPE.get(parsed.type)
     if module is None:
         return {"text": "", "valid": False}
     try:
         text = module.excerpt(parsed, locator)
-        return {"text": text, "valid": True}
+        return {
+            "text": text,
+            "valid": True,
+            "next_step": (
+                "Citation valid. It is NOT a finding yet — call extract_workflow / "
+                "extract_pain_signal / extract_lead_row with this source to commit it."
+            ),
+        }
     except (KeyError, ValueError):
         return {"text": "", "valid": False}

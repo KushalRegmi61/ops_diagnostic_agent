@@ -85,6 +85,42 @@ def test_cite_locator_invalid_returns_valid_false():
     assert result["valid"] is False
 
 
+def test_cite_locator_valid_return_includes_next_step_hint():
+    from app.agents.per_file._tools.cite_locator import cite_locator
+    from app.schemas import ParsedFile, ParsedSegment
+
+    parsed = ParsedFile(
+        file_id="f1", file_name="notes.md", type="md",
+        segments=[ParsedSegment(
+            text="Leads wait more than 24 hours before first response.",
+            locator={"type": "text", "line_start": 1, "line_end": 1},
+        )],
+    )
+    result = cite_locator(parsed, locator={"type": "text", "line_start": 1, "line_end": 1})
+
+    assert result["valid"] is True
+    assert result["text"]  # unchanged: real excerpt round-trips
+    assert "next_step" in result
+    assert "extract_workflow" in result["next_step"]
+
+
+def test_cite_locator_invalid_return_unchanged_shape():
+    from app.agents.per_file._tools.cite_locator import cite_locator
+    from app.schemas import ParsedFile, ParsedSegment
+
+    parsed = ParsedFile(
+        file_id="f1", file_name="notes.md", type="md",
+        segments=[ParsedSegment(
+            text="Leads wait.", locator={"type": "text", "line_start": 1, "line_end": 1},
+        )],
+    )
+    result = cite_locator(parsed, locator={"type": "text", "line_start": 999, "line_end": 999})
+
+    assert result["valid"] is False
+    assert result["text"] == ""
+    assert "next_step" not in result
+
+
 def test_finalize_summary_builds_file_summary_from_state():
     """finalize_summary projects WorkingState into a FileSummary."""
     ws = WorkingState(file_id="f1", file_name="x.md")
