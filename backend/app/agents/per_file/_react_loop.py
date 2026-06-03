@@ -34,6 +34,7 @@ COMPACT_EVERY = int(os.getenv("AGENT_COMPACT_EVERY", "4"))       # sawtooth peri
 FINALIZE_GUARD = int(os.getenv("AGENT_FINALIZE_GUARD", "2"))     # force-finalize when steps_remaining <= this
 SATURATION_WINDOW = int(os.getenv("AGENT_SATURATION_WINDOW", "2"))  # turns of zero finding-growth before saturation
 FILE_NAME_PATTERN = re.compile(r"([A-Za-z0-9][A-Za-z0-9_\- ]{0,200}\.[A-Za-z0-9]{1,8})")
+_EXTRACT_TOOLS = {"extract_workflow", "extract_pain_signal", "extract_lead_row"}
 
 
 class _PerFileGraphState(TypedDict, total=False):
@@ -248,8 +249,10 @@ def _initial_messages(
 def _apply_tool_observations(ws: WorkingState, messages: list[Any]) -> None:
     """Deterministically fold the latest tool call + its result into ProgressState.
 
-    Logs queries, records visited segment indices, and advances the coverage
-    frontier. No LLM; pure bookkeeping over observable tool I/O.
+    Logs queries, records visited segment indices, advances the coverage frontier,
+    increments pending_citations on a valid cite_locator round-trip, and resets
+    pending_citations to zero when any extract_* commits a finding.
+    No LLM; pure bookkeeping over observable tool I/O.
     """
     last_ai = _last_ai_message(messages)
     if last_ai is None:
@@ -275,6 +278,12 @@ def _apply_tool_observations(ws: WorkingState, messages: list[Any]) -> None:
             if idx not in ws.segments_visited:
                 ws.segments_visited.append(idx)
             ws.coverage_frontier = max(ws.coverage_frontier, idx)
+    elif name == "cite_locator":
+        result = _tool_result_for(messages, call.get("id"))
+        if isinstance(result, dict) and result.get("valid") is True:
+            ws.pending_citations += 1
+    elif name in _EXTRACT_TOOLS:
+        ws.pending_citations = 0
 
 
 def _tool_result_for(messages: list[Any], tool_call_id: str | None) -> Any:

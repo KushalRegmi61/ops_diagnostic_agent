@@ -185,6 +185,34 @@ def test_apply_tool_observations_read_segment_marks_visited():
     assert 7 in ws.segments_visited
 
 
+def test_apply_tool_observations_valid_cite_increments_pending():
+    from app.agents.per_file._react_loop import _apply_tool_observations
+    ws = WorkingState(file_id="f1", file_name="x", total_segments=10)
+    ai = _ai_tool_call("cite_locator", {"locator": {"type": "text", "line_start": 1, "line_end": 1}})
+    tool = ToolMessage(content='{"text": "real excerpt", "valid": true}', name="cite_locator", tool_call_id="t1")
+    _apply_tool_observations(ws, [ai, tool])
+    assert ws.pending_citations == 1
+
+
+def test_apply_tool_observations_invalid_cite_does_not_increment_pending():
+    from app.agents.per_file._react_loop import _apply_tool_observations
+    ws = WorkingState(file_id="f1", file_name="x", total_segments=10)
+    ai = _ai_tool_call("cite_locator", {"locator": {"type": "text", "line_start": 9, "line_end": 9}})
+    tool = ToolMessage(content='{"text": "", "valid": false}', name="cite_locator", tool_call_id="t1")
+    _apply_tool_observations(ws, [ai, tool])
+    assert ws.pending_citations == 0
+
+
+def test_apply_tool_observations_extract_resets_pending():
+    from app.agents.per_file._react_loop import _apply_tool_observations
+    ws = WorkingState(file_id="f1", file_name="x", total_segments=10)
+    ws.pending_citations = 2
+    ai = _ai_tool_call("extract_workflow", {"name": "Intake", "sources": []})
+    tool = ToolMessage(content='{"ok": true, "workflow_index": 0}', name="extract_workflow", tool_call_id="t1")
+    _apply_tool_observations(ws, [ai, tool])
+    assert ws.pending_citations == 0
+
+
 def test_update_stall_increments_on_repeated_signature():
     from app.agents.per_file._react_loop import _update_stall
     ws = WorkingState(file_id="f1", file_name="x")
