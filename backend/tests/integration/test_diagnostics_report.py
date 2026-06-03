@@ -45,3 +45,43 @@ def test_diagnostics_report_is_complete_over_corpus():
         assert d.funnel.terminal_reason in {"model_finalize", "force_finalize", "fallback"}
         assert d.failure_stage in _VALID_STAGES
         assert d.probe.segment_count >= 0
+
+
+@pytest.mark.xfail(
+    strict=False,
+    reason=(
+        "#2b soft steering lifts convergence 10/18 -> 13/18 but 2 non-JSON files "
+        "(discovery_call.txt, leads_pipeline.csv) still cite-without-extract. The deeper "
+        "fold-validation-into-extract fix is deferred to #2c; an XPASS here means #2c "
+        "closed the gap and this marker should be removed."
+    ),
+)
+def test_steering_lifts_non_json_behavioral_failures():
+    """After #2b, previously-stalling non-JSON files commit at least one extract.
+
+    Funnel gate: no non-JSON file may end in 'behavioral_steering' while having cited
+    (cite_calls > 0) yet committed nothing (extract_calls == 0) — that is exactly the
+    cite->extract stall #2b targets. JSON files are excluded (tiny-segments parser issue
+    deferred to #2c). Convergence is reported for context, not hard-asserted (small-model
+    variance).
+
+    Marked xfail (non-strict): #2b's soft nudge fixed most stalls (+3 convergence) but two
+    non-JSON files still cite-without-extract; the strict zero-offenders bar is met only
+    once the #2c deeper fix lands.
+    """
+    report = run_diagnostics(get_provider())
+
+    converged = sum(1 for d in report.diagnostics if d.failure_stage == "converges")
+    non_json = [d for d in report.diagnostics if d.type != "json"]
+    offenders = [
+        (d.file, d.funnel.cite_calls, d.funnel.extract_calls)
+        for d in non_json
+        if d.failure_stage == "behavioral_steering"
+        and d.funnel.cite_calls > 0
+        and d.funnel.extract_calls == 0
+    ]
+
+    print(f"\n[#2b] convergence={converged}/{len(report.diagnostics)} "
+          f"non_json_cite_without_extract={len(offenders)}")
+
+    assert not offenders, f"non-JSON files still cite without extracting: {offenders}"
