@@ -18,18 +18,29 @@ Each signal should be narrow and cited. A single file may produce multiple pain
 signals if it shows distinct problems.
 """
 from app.agents.per_file._state import WorkingState
-from app.schemas import PainSignal, Source
+from app.agents.per_file._tools._citation import _validate_sources
+from app.schemas import PainSignal, ParsedFile, Source
+
+_NO_VALID_SOURCE_HINT = (
+    "every source failed to round-trip — re-check the locator against the segment index"
+)
 
 
-def extract_pain_signal(ws: WorkingState, *, text: str, category: str, sources: list[Source]) -> dict:
-    """Append one cited diagnostic signal to ``ws.pain_signals``.
+def extract_pain_signal(
+    ws: WorkingState, *, parsed: ParsedFile, text: str, category: str, sources: list,
+) -> dict:
+    """Append one cited pain signal after validating its sources.
 
-    ``text`` should state the concrete problem, not just repeat the source
-    sentence. ``category`` must be one of the known pain categories. ``sources``
-    should point to the segment(s) that justify the signal.
-
-    Returns a small acknowledgement containing the inserted signal index.
+    Invalid sources are dropped; the signal is saved with only the kept sources
+    when at least one survives, otherwise nothing is saved and ``ok`` is False
+    with a corrective hint.
     """
-    ps = PainSignal(text=text, category=category, sources=sources)
+    kept, dropped = _validate_sources(parsed, sources)
+    if not kept:
+        return {"ok": False, "dropped_sources": dropped, "hint": _NO_VALID_SOURCE_HINT}
+    ps = PainSignal(
+        text=text, category=category,
+        sources=[Source(**s) if isinstance(s, dict) else s for s in kept],
+    )
     ws.pain_signals.append(ps)
-    return {"ok": True, "pain_signal_index": len(ws.pain_signals) - 1}
+    return {"ok": True, "pain_signal_index": len(ws.pain_signals) - 1, "dropped_sources": dropped}
