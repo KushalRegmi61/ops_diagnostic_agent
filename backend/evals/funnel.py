@@ -21,6 +21,7 @@ class RunFunnel(BaseModel):
     cite_calls: int = 0
     cite_round_trips: int = 0
     extract_calls: int = 0
+    extract_rejected: int = 0
     terminal_reason: str = "unknown"
 
 
@@ -45,7 +46,10 @@ class FunnelCollector:
             if isinstance(result, dict) and result.get("valid") is True:
                 f.cite_round_trips += 1
         elif name in _EXTRACT_TOOLS:
-            f.extract_calls += 1
+            if isinstance(result, dict) and result.get("ok") is False:
+                f.extract_rejected += 1
+            else:
+                f.extract_calls += 1
 
 
 def failure_stage(funnel: RunFunnel) -> str:
@@ -58,6 +62,8 @@ def failure_stage(funnel: RunFunnel) -> str:
         return "converges"
     if funnel.searches_issued > 0 and funnel.search_hits_returned == 0:
         return "retrieval_or_parser"
+    if funnel.extract_rejected > 0:
+        return "cite_roundtrip_parser"
     if funnel.cite_calls > 0 and funnel.cite_round_trips == 0:
         return "cite_roundtrip_parser"
     return "behavioral_steering"

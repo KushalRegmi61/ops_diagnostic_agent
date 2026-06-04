@@ -66,3 +66,20 @@ def test_terminal_reason_from_summary_shape(paragraph, notes, expected):
 def test_failure_stage_truth_table(funnel, expected):
     """failure_stage localizes the collapse point from the funnel counts."""
     assert failure_stage(funnel) == expected
+
+
+def test_funnel_counts_rejected_extract_separately():
+    """An extract_* result with ok False increments extract_rejected, not extract_calls."""
+    c = FunnelCollector()
+    c("extract_workflow", {"name": "x"}, {"ok": False, "hint": "bad"})
+    c("extract_pain_signal", {"text": "y"}, {"ok": True})
+    f = c.funnel
+    assert f.extract_calls == 1
+    assert f.extract_rejected == 1
+
+
+def test_failure_stage_rejected_extract_is_parser_not_steering():
+    """extract_rejected>0 with no committed extract localizes to cite_roundtrip_parser."""
+    f = RunFunnel(terminal_reason="fallback", searches_issued=3, search_hits_returned=9,
+                  extract_rejected=2, extract_calls=0)
+    assert failure_stage(f) == "cite_roundtrip_parser"
