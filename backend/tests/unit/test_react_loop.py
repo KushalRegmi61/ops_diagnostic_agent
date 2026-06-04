@@ -213,6 +213,16 @@ def test_apply_tool_observations_extract_resets_pending():
     assert ws.pending_citations == 0
 
 
+def test_apply_tool_observations_rejected_extract_does_not_reset_pending():
+    from app.agents.per_file._react_loop import _apply_tool_observations
+    ws = WorkingState(file_id="f1", file_name="x", total_segments=10)
+    ws.pending_citations = 2
+    ai = _ai_tool_call("extract_workflow", {"name": "Intake", "sources": []})
+    tool = ToolMessage(content='{"ok": false, "dropped_sources": [], "hint": "bad"}', name="extract_workflow", tool_call_id="t1")
+    _apply_tool_observations(ws, [ai, tool])
+    assert ws.pending_citations == 2
+
+
 def test_update_stall_increments_on_repeated_signature():
     from app.agents.per_file._react_loop import _update_stall
     ws = WorkingState(file_id="f1", file_name="x")

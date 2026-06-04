@@ -253,7 +253,7 @@ def _apply_tool_observations(ws: WorkingState, messages: list[Any]) -> None:
 
     Logs queries, records visited segment indices, advances the coverage frontier,
     increments pending_citations on a valid cite_locator round-trip, and resets
-    pending_citations to zero when any extract_* commits a finding.
+    pending_citations to zero when an extract_* commits a finding (not on a soft-rejected extract).
     No LLM; pure bookkeeping over observable tool I/O.
     """
     last_ai = _last_ai_message(messages)
@@ -285,7 +285,9 @@ def _apply_tool_observations(ws: WorkingState, messages: list[Any]) -> None:
         if isinstance(result, dict) and result.get("valid") is True:
             ws.pending_citations += 1
     elif name in _EXTRACT_TOOLS:
-        ws.pending_citations = 0
+        result = _tool_result_for(messages, call.get("id"))
+        if not (isinstance(result, dict) and result.get("ok") is False):
+            ws.pending_citations = 0
 
 
 def _tool_result_for(messages: list[Any], tool_call_id: str | None) -> Any:
