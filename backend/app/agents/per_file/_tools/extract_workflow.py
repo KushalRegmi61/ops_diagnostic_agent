@@ -15,26 +15,32 @@ ordered steps when known, manual touchpoints, and source citations. Downstream
 lead agents use these records to map operations and find bottlenecks.
 """
 from app.agents.per_file._state import WorkingState
-from app.schemas import Source, WorkflowRecord
+from app.agents.per_file._tools._citation import _validate_sources
+from app.schemas import ParsedFile, Source, WorkflowRecord
+
+_NO_VALID_SOURCE_HINT = (
+    "every source failed to round-trip — re-check the locator against the segment index"
+)
 
 
 def extract_workflow(
-    ws: WorkingState, *,
+    ws: WorkingState, *, parsed: ParsedFile,
     name: str, actors: list[str], systems: list[str],
-    steps: list[str], manual_touchpoints: list[str], sources: list[Source],
+    steps: list[str], manual_touchpoints: list[str], sources: list,
 ) -> dict:
-    """Append one cited workflow/process record to ``ws.workflows``.
+    """Append one cited workflow record after validating its sources.
 
-    ``name`` should be a concise process name. ``actors`` are people or roles.
-    ``systems`` are tools/apps/documents involved. ``steps`` are the observed
-    sequence of work. ``manual_touchpoints`` are places where humans copy,
-    chase, reconcile, re-key, or wait. ``sources`` must cite the evidence.
-
-    Returns a small acknowledgement containing the inserted workflow index.
+    Each source is round-tripped through the parser; invalid ones are dropped.
+    The record is saved with only the kept sources when at least one survives;
+    if none do, nothing is saved and ``ok`` is False with a corrective hint.
     """
+    kept, dropped = _validate_sources(parsed, sources)
+    if not kept:
+        return {"ok": False, "dropped_sources": dropped, "hint": _NO_VALID_SOURCE_HINT}
     wf = WorkflowRecord(
         name=name, actors=actors, systems=systems, steps=steps,
-        manual_touchpoints=manual_touchpoints, sources=sources,
+        manual_touchpoints=manual_touchpoints,
+        sources=[Source(**s) if isinstance(s, dict) else s for s in kept],
     )
     ws.workflows.append(wf)
-    return {"ok": True, "workflow_index": len(ws.workflows) - 1}
+    return {"ok": True, "workflow_index": len(ws.workflows) - 1, "dropped_sources": dropped}
