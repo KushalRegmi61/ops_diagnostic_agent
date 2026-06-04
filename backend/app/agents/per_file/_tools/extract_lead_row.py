@@ -21,7 +21,12 @@ problem such as no owner, stale follow-up, or missing email, the agent should
 also call ``extract_pain_signal`` with the same source.
 """
 from app.agents.per_file._state import WorkingState
-from app.schemas import KVPair, LeadRow, Source
+from app.agents.per_file._tools._citation import _validate_sources
+from app.schemas import KVPair, LeadRow, ParsedFile, Source
+
+_INVALID_SOURCE_HINT = (
+    "source failed to round-trip — re-check the locator against the segment index"
+)
 
 
 def _to_kv_pairs(d: dict | list) -> list[KVPair]:
@@ -31,18 +36,16 @@ def _to_kv_pairs(d: dict | list) -> list[KVPair]:
     return [KVPair(key=str(k), value="" if v is None else str(v)) for k, v in d.items()]
 
 
-def extract_lead_row(ws: WorkingState, *, raw: dict, normalized: dict, source: Source) -> dict:
-    """Append one cited lead-like record to the working state.
+def extract_lead_row(ws: WorkingState, *, parsed: ParsedFile, raw: dict, normalized: dict, source) -> dict:
+    """Append one cited lead-like record after validating its single source.
 
-    ``raw`` preserves the source record exactly enough for audit/review.
-    ``normalized`` converts that record into stable keys such as
-    ``company``, ``contact_name``, ``email``, ``stage``, ``owner``,
-    ``last_contact_date``, or ``estimated_value`` when those fields exist.
-    ``source`` must point to the row/object/message segment that supports the
-    extraction, ideally after the agent has validated the locator.
-
-    Returns a small acknowledgement containing the inserted row index.
+    If the source round-trips, the row is saved; otherwise nothing is saved and
+    ``ok`` is False with a corrective hint.
     """
-    lr = LeadRow(raw=_to_kv_pairs(raw), normalized=_to_kv_pairs(normalized), source=source)
+    kept, _dropped = _validate_sources(parsed, [source])
+    if not kept:
+        return {"ok": False, "hint": _INVALID_SOURCE_HINT}
+    src = Source(**kept[0]) if isinstance(kept[0], dict) else kept[0]
+    lr = LeadRow(raw=_to_kv_pairs(raw), normalized=_to_kv_pairs(normalized), source=src)
     ws.lead_rows.append(lr)
     return {"ok": True, "lead_row_index": len(ws.lead_rows) - 1}
