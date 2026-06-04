@@ -50,7 +50,7 @@ def test_extract_workflow_appends_to_working_state():
     """extract_workflow appends a WorkflowRecord and reports ok=True."""
     ws = WorkingState(file_id="f1", file_name="x.md")
     out = extract_workflow(
-        ws, name="onboarding", actors=["CSR"], systems=["Applied"],
+        ws, parsed=_pf(), name="onboarding", actors=["CSR"], systems=["Applied"],
         steps=["verify id"], manual_touchpoints=["copy"], sources=[_src()],
     )
     assert out["ok"] is True
@@ -60,14 +60,14 @@ def test_extract_workflow_appends_to_working_state():
 def test_extract_pain_signal_validates_category():
     """extract_pain_signal accepts known categories and stores the PainSignal."""
     ws = WorkingState(file_id="f1", file_name="x.md")
-    extract_pain_signal(ws, text="too slow", category="delay", sources=[_src()])
+    extract_pain_signal(ws, parsed=_pf(), text="too slow", category="delay", sources=[_src()])
     assert ws.pain_signals[0].category == "delay"
 
 
 def test_extract_lead_row_only_accepts_table_types():
     """extract_lead_row appends a LeadRow with raw + normalized payload."""
     ws = WorkingState(file_id="f1", file_name="leads.csv")
-    extract_lead_row(ws, raw={"name": "Acme"}, normalized={"name": "Acme"}, source=_src())
+    extract_lead_row(ws, parsed=_pf(), raw={"name": "Acme"}, normalized={"name": "Acme"}, source=_src())
     assert ws.lead_rows[0].raw[0].key == "name"
     assert ws.lead_rows[0].raw[0].value == "Acme"
 

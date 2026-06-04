@@ -158,10 +158,11 @@ def build_tools(parsed: ParsedFile, ws: WorkingState, *, agent_mode: bool = Fals
         ),
         "extract_workflow": StructuredTool.from_function(
             name="extract_workflow",
-            description="Append a workflow record to the per-file working state.",
+            description="Validate sources and append a workflow record to the per-file working state.",
             args_schema=ExtractWorkflowArgs,
             func=_strip_turn(lambda name, actors, systems, steps, manual_touchpoints, sources: extract_workflow(
                 ws,
+                parsed=parsed,
                 name=name,
                 actors=actors,
                 systems=systems,
@@ -172,18 +173,18 @@ def build_tools(parsed: ParsedFile, ws: WorkingState, *, agent_mode: bool = Fals
         ),
         "extract_pain_signal": StructuredTool.from_function(
             name="extract_pain_signal",
-            description="Append an operational pain signal to the per-file working state.",
+            description="Validate sources and append an operational pain signal to the per-file working state.",
             args_schema=ExtractPainSignalArgs,
             func=_strip_turn(lambda text, category, sources: extract_pain_signal(
-                ws, text=text, category=category, sources=sources,
+                ws, parsed=parsed, text=text, category=category, sources=sources,
             )),
         ),
         "extract_lead_row": StructuredTool.from_function(
             name="extract_lead_row",
-            description="Append a structured lead row to the per-file working state.",
+            description="Validate the source and append a structured lead row to the per-file working state.",
             args_schema=ExtractLeadRowArgs,
             func=_strip_turn(lambda raw, normalized, source: extract_lead_row(
-                ws, raw=raw, normalized=normalized, source=source,
+                ws, parsed=parsed, raw=raw, normalized=normalized, source=source,
             )),
         ),
         "cite_locator": StructuredTool.from_function(
