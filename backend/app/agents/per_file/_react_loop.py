@@ -236,7 +236,9 @@ def _initial_messages(
         + "\n\nFile-type guidance:\n"
         + (prompt_suffix or "No additional file-type guidance.")
         + "\n\nUse tools to inspect evidence and build findings. "
-        + "Call cite_locator before using a locator as a source. "
+        + "Call extract_workflow / extract_pain_signal / extract_lead_row with your "
+        + "sources — they validate locators automatically and reject bad ones. "
+        + "cite_locator is available if you want to pre-check a locator, but it is optional. "
         + "Call finalize_summary when the file summary is complete."
     )
     user = (
