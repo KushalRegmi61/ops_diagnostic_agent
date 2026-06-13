@@ -23,7 +23,7 @@ Upload a client's messy ops artifacts - PDFs, meeting transcripts, CSVs, mailbox
 | **How this refuses all four** | ① code-enforced citation round-trip ② typed errors that never vanish ③ real systems only - no mocks ④ structured, ROI-scored Blueprint you can act on. |
 
 ---
-
+<!--
 ## Live demo
 
 | Resource | URL |
@@ -34,7 +34,8 @@ Upload a client's messy ops artifacts - PDFs, meeting transcripts, CSVs, mailbox
 
 > Backend is on Render free tier - cold-starts in ~30–60 s after idle. Hit `/health` once before a run.
 
----
+--/
+!-->
 
 ## How it works
 
