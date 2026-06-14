@@ -6,9 +6,19 @@
  * citations through the excerpt endpoint.
  */
 
-const API_BASE_URL =
+/** Backend origin as configured — used for display and the WebSocket, which
+    can't go through the same-origin rewrite. */
+const RAW_API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
-const WS_BASE_URL = API_BASE_URL.replace(/^http/, "ws");
+
+/** REST + /health are issued against a first-party path that Next rewrites to
+    the backend (see next.config.ts). Same-origin requests dodge content
+    blockers (ERR_BLOCKED_BY_CLIENT) and need no CORS. */
+const API_BASE_URL = "/api/backend";
+
+/** WebSockets bypass the rewrite (Vercel can't proxy WS), so the live-events
+    stream connects straight to the backend origin. */
+const WS_BASE_URL = RAW_API_BASE_URL.replace(/^http/, "ws");
 
 export type ParserStatus = "ok" | "error" | "pending";
 
@@ -195,4 +205,4 @@ export function openRunEventSocket(runId: string): WebSocket {
   return new WebSocket(`${WS_BASE_URL}/api/runs/${runId}/events`);
 }
 
-export { API_BASE_URL, WS_BASE_URL };
+export { API_BASE_URL, RAW_API_BASE_URL, WS_BASE_URL };

@@ -49,9 +49,9 @@ import {
 } from "react";
 
 import {
-  API_BASE_URL,
   ApiError,
   Blueprint,
+  RAW_API_BASE_URL,
   BlueprintClaim,
   FileRef,
   RunEvent,
@@ -780,7 +780,7 @@ export function DiagnosticWorkspace() {
           <div className="flex items-center gap-2">
             <span className="chip">
               <Database aria-hidden="true" className="h-3 w-3" />
-              <span className="font-mono">{API_BASE_URL}</span>
+              <span className="font-mono">{RAW_API_BASE_URL}</span>
             </span>
             <span
               aria-live="polite"
