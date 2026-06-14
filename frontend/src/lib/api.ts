@@ -127,7 +127,14 @@ export async function checkBackendHealth(timeoutMs = 8000): Promise<boolean> {
       cache: "no-store",
       signal: controller.signal,
     });
-    return response.ok;
+    if (!response.ok) return false;
+    try {
+      const body = (await response.json()) as { status?: unknown };
+      return body.status === "ok";
+    } catch {
+      // 2xx but the body was not the expected JSON — treat as healthy.
+      return true;
+    }
   } catch {
     return false;
   } finally {

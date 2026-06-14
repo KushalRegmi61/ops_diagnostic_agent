@@ -470,14 +470,22 @@ export function DiagnosticWorkspace() {
   const [warmDismissed, setWarmDismissed] = useState(false);
   const [pendingStart, setPendingStart] = useState(false);
   const [healthAttempt, setHealthAttempt] = useState(0);
+  const [bannerSeen, setBannerSeen] = useState(false);
+  const [showReadyToast, setShowReadyToast] = useState(false);
   const steeringRef = useRef<HTMLTextAreaElement | null>(null);
 
   /** Ping /health on load to wake the (possibly idle) free-tier backend early,
       then poll with backoff until it answers. File intake + steering are
-      client-side, so the operator preps a run while the instance boots (~3-4
-      min); only Run waits on this. Re-runs when healthAttempt bumps (retry). */
+      client-side, so the operator preps a run while the instance boots (~5-6
+      min); only Run waits on this. Re-runs when healthAttempt bumps (retry).
+
+      A multi-minute boot means the user almost always tabs away while waiting,
+      and browsers throttle/freeze background-tab timers — so we re-probe
+      immediately on visibilitychange / focus / online to recover the instant
+      the tab returns, rather than waiting out a throttled backoff timer. */
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const startedAt = Date.now();
     let delay = 2000;
@@ -486,38 +494,86 @@ export function DiagnosticWorkspace() {
     setWarmElapsed(0);
     const grace = setTimeout(() => setWarmGrace(true), 1200);
     const tick = setInterval(() => {
-      if (!cancelled) setWarmElapsed(Math.floor((Date.now() - startedAt) / 1000));
+      if (!cancelled) {
+        setWarmElapsed(Math.floor((Date.now() - startedAt) / 1000));
+      }
     }, 1000);
 
-    /** One probe: skip while the tab is hidden, succeed→ready, expire→unreachable. */
-    async function probe() {
-      if (cancelled) return;
-      if (typeof document !== "undefined" && document.hidden) {
-        timer = setTimeout(probe, 2000);
-        return;
+    /** Cancel any scheduled next probe. */
+    function clearPending() {
+      if (timer) {
+        clearTimeout(timer);
+        timer = undefined;
       }
-      const ok = await checkBackendHealth();
+    }
+
+    /** One probe: success→ready (stop), expired→unreachable (stop), else backoff. */
+    async function probe() {
+      clearPending();
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      let ok = false;
+      try {
+        ok = await checkBackendHealth();
+      } finally {
+        inFlight = false;
+      }
       if (cancelled) return;
       if (ok) {
         setBackendStatus("ready");
+        clearInterval(tick);
         return;
       }
       if (Date.now() - startedAt > WARM_TIMEOUT_MS) {
         setBackendStatus("unreachable");
+        clearInterval(tick);
         return;
       }
       delay = Math.min(Math.round(delay * 1.4), 8000);
       timer = setTimeout(probe, delay);
     }
+
+    /** Re-probe now (reset backoff) when the tab or network comes back. */
+    function probeNow() {
+      if (cancelled) return;
+      delay = 2000;
+      probe();
+    }
+    function onVisible() {
+      if (!document.hidden) probeNow();
+    }
+
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", probeNow);
+    window.addEventListener("online", probeNow);
     probe();
 
     return () => {
       cancelled = true;
       clearTimeout(grace);
       clearInterval(tick);
-      if (timer) clearTimeout(timer);
+      clearPending();
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", probeNow);
+      window.removeEventListener("online", probeNow);
     };
   }, [healthAttempt]);
+
+  /** Record that the warm-up banner was actually shown, so the ready toast only
+      fires after a real wait (not on a sub-second warm load). */
+  useEffect(() => {
+    if (backendStatus === "warming" && warmGrace && !warmDismissed) {
+      setBannerSeen(true);
+    }
+  }, [backendStatus, warmGrace, warmDismissed]);
+
+  /** Pop a brief "backend ready" confirmation once a real warm-up resolves. */
+  useEffect(() => {
+    if (backendStatus !== "ready" || !bannerSeen) return;
+    setShowReadyToast(true);
+    const t = setTimeout(() => setShowReadyToast(false), 4500);
+    return () => clearTimeout(t);
+  }, [backendStatus, bannerSeen]);
 
   /** Auto-grow the steering textarea like Claude/ChatGPT's composer. */
   useEffect(() => {
@@ -1620,6 +1676,33 @@ export function DiagnosticWorkspace() {
           <span className="font-mono">v0.2 · {new Date().getFullYear()}</span>
         </footer>
       </div>
+
+      {showReadyToast ? (
+        <div
+          aria-live="polite"
+          className="fade-up fixed bottom-5 right-5 z-30 flex items-center gap-2.5 rounded-lg border border-teal-200 bg-white px-4 py-3 shadow-[0_16px_40px_-16px_rgba(5,150,105,0.5)]"
+        >
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-teal-50 text-teal-700">
+            <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+          </span>
+          <div className="leading-tight">
+            <p className="text-[13px] font-semibold text-[var(--fg-strong)]">
+              Backend ready
+            </p>
+            <p className="text-[11.5px] text-[var(--fg-muted)]">
+              You are good to run a diagnostic.
+            </p>
+          </div>
+          <button
+            aria-label="Dismiss"
+            className="ml-1 text-[var(--fg-dim)] transition hover:text-[var(--fg-strong)]"
+            onClick={() => setShowReadyToast(false)}
+            type="button"
+          >
+            <X aria-hidden="true" className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : null}
     </main>
   );
 }
