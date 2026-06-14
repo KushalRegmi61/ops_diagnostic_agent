@@ -12,6 +12,18 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+/** Origin of the FastAPI backend, used to warm the connection before the first
+    /health probe fires. Falls back to null when the env var is unset/invalid. */
+const apiOrigin = (() => {
+  try {
+    return new URL(
+      process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000",
+    ).origin;
+  } catch {
+    return null;
+  }
+})();
+
 export const metadata: Metadata = {
   title: "Ops Diagnostic Agent — Evidence to Blueprint",
   description:
@@ -28,7 +40,16 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="relative min-h-full flex flex-col">{children}</body>
+      <body className="relative min-h-full flex flex-col">
+        {apiOrigin ? (
+          <>
+            {/* React 19 hoists these resource hints into <head>. */}
+            <link rel="preconnect" href={apiOrigin} crossOrigin="anonymous" />
+            <link rel="dns-prefetch" href={apiOrigin} />
+          </>
+        ) : null}
+        {children}
+      </body>
     </html>
   );
 }

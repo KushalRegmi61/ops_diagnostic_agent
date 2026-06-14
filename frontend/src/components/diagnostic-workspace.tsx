@@ -27,6 +27,8 @@ import {
   Play,
   Quote,
   Radio,
+  RefreshCw,
+  Server,
   Settings2,
   Sparkles,
   Target,
@@ -55,6 +57,7 @@ import {
   RunEvent,
   RunResponse,
   Source,
+  checkBackendHealth,
   createRun,
   getBlueprint,
   getExcerpt,
@@ -66,6 +69,17 @@ import {
 import { Markdown } from "./markdown";
 
 type WorkStatus = "idle" | "uploading" | "running" | "complete" | "error";
+
+/** Liveness of the (possibly idle free-tier) backend, driven by /health polls. */
+type BackendStatus = "warming" | "ready" | "unreachable";
+
+/** Cold-start budget: the free-tier backend has been observed booting in ~5.5
+    min. We poll up to 9 min before surfacing a manual retry rather than
+    spinning forever — generous headroom over the worst observed boot. */
+const WARM_TIMEOUT_MS = 540_000;
+
+/** Rough cold-boot duration (~6 min) used only to pace the warm-up progress bar. */
+const WARM_EXPECTED_S = 360;
 
 type TimelineStep = {
   label: string;
@@ -450,7 +464,60 @@ export function DiagnosticWorkspace() {
   const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
   const [userContext, setUserContext] = useState("");
   const [submittedContext, setSubmittedContext] = useState<string | null>(null);
+  const [backendStatus, setBackendStatus] = useState<BackendStatus>("warming");
+  const [warmElapsed, setWarmElapsed] = useState(0);
+  const [warmGrace, setWarmGrace] = useState(false);
+  const [warmDismissed, setWarmDismissed] = useState(false);
+  const [pendingStart, setPendingStart] = useState(false);
+  const [healthAttempt, setHealthAttempt] = useState(0);
   const steeringRef = useRef<HTMLTextAreaElement | null>(null);
+
+  /** Ping /health on load to wake the (possibly idle) free-tier backend early,
+      then poll with backoff until it answers. File intake + steering are
+      client-side, so the operator preps a run while the instance boots (~3-4
+      min); only Run waits on this. Re-runs when healthAttempt bumps (retry). */
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+    let delay = 2000;
+
+    setBackendStatus("warming");
+    setWarmElapsed(0);
+    const grace = setTimeout(() => setWarmGrace(true), 1200);
+    const tick = setInterval(() => {
+      if (!cancelled) setWarmElapsed(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+
+    /** One probe: skip while the tab is hidden, succeed→ready, expire→unreachable. */
+    async function probe() {
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.hidden) {
+        timer = setTimeout(probe, 2000);
+        return;
+      }
+      const ok = await checkBackendHealth();
+      if (cancelled) return;
+      if (ok) {
+        setBackendStatus("ready");
+        return;
+      }
+      if (Date.now() - startedAt > WARM_TIMEOUT_MS) {
+        setBackendStatus("unreachable");
+        return;
+      }
+      delay = Math.min(Math.round(delay * 1.4), 8000);
+      timer = setTimeout(probe, delay);
+    }
+    probe();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(grace);
+      clearInterval(tick);
+      if (timer) clearTimeout(timer);
+    };
+  }, [healthAttempt]);
 
   /** Auto-grow the steering textarea like Claude/ChatGPT's composer. */
   useEffect(() => {
@@ -594,6 +661,24 @@ export function DiagnosticWorkspace() {
     setSubmittedContext(null);
   }
 
+  /** Re-run /health probing after the backend looked unreachable. */
+  function retryHealth() {
+    setHealthAttempt((n) => n + 1);
+  }
+
+  /** Run click with queue-and-go: start immediately if the backend is ready,
+      otherwise queue the run (and kick a retry if it had gone unreachable) so
+      the auto-start effect fires it the moment /health flips — no second click. */
+  function handleRunClick() {
+    if (selectedFiles.length === 0 || overLimit || isWorking) return;
+    if (backendStatus === "ready") {
+      onStartRun();
+      return;
+    }
+    if (backendStatus === "unreachable") retryHealth();
+    setPendingStart(true);
+  }
+
   const canStart =
     selectedFiles.length > 0 && status !== "uploading" && status !== "running";
   const isWorking = status === "uploading" || status === "running";
@@ -604,6 +689,18 @@ export function DiagnosticWorkspace() {
     blueprint == null;
   const contextCharCount = userContext.length;
   const overLimit = contextCharCount > USER_CONTEXT_MAX;
+  const backendReady = backendStatus === "ready";
+  const runDisabled = !canStart || overLimit || pendingStart;
+
+  /** Fire a queued run the instant the backend turns ready (queue-and-go). */
+  useEffect(() => {
+    if (pendingStart && backendReady && canStart && !overLimit) {
+      setPendingStart(false);
+      onStartRun();
+    }
+    // onStartRun is a stable in-component closure; deps cover the trigger inputs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingStart, backendReady, canStart, overLimit]);
 
   return (
     <main className="relative z-10 min-h-screen text-[var(--fg)]">
@@ -628,6 +725,36 @@ export function DiagnosticWorkspace() {
             <span className="chip">
               <Database aria-hidden="true" className="h-3 w-3" />
               <span className="font-mono">{API_BASE_URL}</span>
+            </span>
+            <span
+              aria-live="polite"
+              className={`chip ${
+                backendStatus === "ready"
+                  ? "border-teal-300 text-teal-700"
+                  : backendStatus === "unreachable"
+                    ? "border-rose-300 text-rose-700"
+                    : "border-amber-300 text-amber-700"
+              }`}
+              title={
+                backendStatus === "ready"
+                  ? "Backend is awake and ready"
+                  : backendStatus === "unreachable"
+                    ? "Backend did not respond — retry from the banner"
+                    : "Waking the free-tier backend (cold start ~5 to 6 min)"
+              }
+            >
+              {backendStatus === "ready" ? (
+                <Server aria-hidden="true" className="h-3 w-3" />
+              ) : backendStatus === "unreachable" ? (
+                <AlertCircle aria-hidden="true" className="h-3 w-3" />
+              ) : (
+                <Loader2 aria-hidden="true" className="h-3 w-3 animate-spin" />
+              )}
+              {backendStatus === "ready"
+                ? "Backend ready"
+                : backendStatus === "unreachable"
+                  ? "Backend offline"
+                  : "Waking backend"}
             </span>
             <span
               className={`chip ${
@@ -664,6 +791,86 @@ export function DiagnosticWorkspace() {
       </header>
 
       <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-6 px-6 py-8 xl:px-10">
+        {backendStatus === "warming" && warmGrace && !warmDismissed ? (
+          <div className="fade-up rounded-lg border border-amber-200 bg-amber-50/70 px-4 py-3 text-amber-900">
+            <div className="flex items-start gap-3">
+              <Loader2
+                aria-hidden="true"
+                className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-amber-600"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[13.5px] font-semibold tracking-tight">
+                    Waking the backend
+                  </p>
+                  <span className="shrink-0 font-mono text-[11px] text-amber-700">
+                    {Math.floor(warmElapsed / 60)}:
+                    {String(warmElapsed % 60).padStart(2, "0")}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[12.5px] leading-6 text-amber-800/80">
+                  The demo backend sleeps when idle to stay free, so a cold start
+                  takes about 5 to 6 minutes. It began waking the moment you
+                  opened this page. Drop your files and write your steering now;{" "}
+                  {pendingStart
+                    ? "your run is queued and will start automatically the moment it is up."
+                    : "you can hit Run anytime and it will start as soon as the backend is up."}
+                </p>
+                <div
+                  aria-hidden="true"
+                  className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-amber-200/70"
+                >
+                  <div
+                    className="h-full rounded-full bg-amber-500/80 transition-[width] duration-1000 ease-linear"
+                    style={{
+                      width: `${Math.min(96, (warmElapsed / WARM_EXPECTED_S) * 100)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+              <button
+                aria-label="Dismiss"
+                className="text-amber-700/70 transition hover:text-amber-900"
+                onClick={() => setWarmDismissed(true)}
+                type="button"
+              >
+                <X aria-hidden="true" className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {backendStatus === "unreachable" && !warmDismissed ? (
+          <div className="fade-up flex items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-rose-800">
+            <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[13.5px] font-semibold tracking-tight">
+                Backend is not responding
+              </p>
+              <p className="mt-0.5 text-[12.5px] leading-6 text-rose-700/90">
+                It did not answer within 9 minutes. It may still be booting or be
+                temporarily down. You can retry the wake-up below.
+              </p>
+              <button
+                className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-rose-300 bg-white px-3 py-1.5 text-[12px] font-semibold text-rose-700 transition hover:bg-rose-100"
+                onClick={retryHealth}
+                type="button"
+              >
+                <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" />
+                Retry wake-up
+              </button>
+            </div>
+            <button
+              aria-label="Dismiss"
+              className="text-rose-700/70 transition hover:text-rose-900"
+              onClick={() => setWarmDismissed(true)}
+              type="button"
+            >
+              <X aria-hidden="true" className="h-4 w-4" />
+            </button>
+          </div>
+        ) : null}
+
         {message ? (
           <div className="fade-up flex items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
             <AlertCircle
@@ -857,11 +1064,11 @@ export function DiagnosticWorkspace() {
                   </p>
                   <button
                     className="btn-primary inline-flex h-11 items-center justify-center gap-2 rounded-lg px-5 text-[13.5px]"
-                    disabled={!canStart || overLimit}
-                    onClick={onStartRun}
+                    disabled={runDisabled}
+                    onClick={handleRunClick}
                     type="button"
                   >
-                    {isWorking ? (
+                    {isWorking || pendingStart ? (
                       <Loader2
                         aria-hidden="true"
                         className="h-4 w-4 animate-spin"
@@ -869,7 +1076,11 @@ export function DiagnosticWorkspace() {
                     ) : (
                       <Play aria-hidden="true" className="h-4 w-4" />
                     )}
-                    Run diagnostic
+                    {isWorking
+                      ? "Running…"
+                      : pendingStart
+                        ? "Starts when ready…"
+                        : "Run diagnostic"}
                   </button>
                 </div>
               </div>
@@ -965,11 +1176,11 @@ export function DiagnosticWorkspace() {
               <div className="mt-5 flex gap-2">
                 <button
                   className="btn-primary inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-lg px-4 text-[13.5px]"
-                  disabled={!canStart}
-                  onClick={onStartRun}
+                  disabled={runDisabled}
+                  onClick={handleRunClick}
                   type="button"
                 >
-                  {isWorking ? (
+                  {isWorking || pendingStart ? (
                     <Loader2
                       aria-hidden="true"
                       className="h-4 w-4 animate-spin"
@@ -977,7 +1188,11 @@ export function DiagnosticWorkspace() {
                   ) : (
                     <Play aria-hidden="true" className="h-4 w-4" />
                   )}
-                  {isWorking ? "Running…" : "Start diagnostic"}
+                  {isWorking
+                    ? "Running…"
+                    : pendingStart
+                      ? "Starts when ready…"
+                      : "Start diagnostic"}
                 </button>
                 {status === "complete" || status === "error" ? (
                   <button

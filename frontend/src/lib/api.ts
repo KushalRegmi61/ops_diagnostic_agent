@@ -110,6 +110,31 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+/**
+ * Probe `/health` with a per-attempt timeout. Returns true only on a 2xx.
+ *
+ * On Render's free tier the first request after idle blocks while the instance
+ * boots, so the UI fires this on load to wake it early and polls until it flips
+ * true. Aborts a hung attempt so the caller can retry instead of waiting on one
+ * stalled socket forever.
+ */
+export async function checkBackendHealth(timeoutMs = 8000): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/health`, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Upload one evidence file and return the parsed file reference. */
 export async function uploadEvidenceFile(file: File): Promise<FileRef> {
   const formData = new FormData();
